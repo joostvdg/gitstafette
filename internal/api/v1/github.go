@@ -1,8 +1,9 @@
-package github
+package v1
 
 import (
 	"fmt"
 	"github.com/joostvdg/gitstafette/internal/cache"
+	"github.com/joostvdg/gitstafette/internal/context"
 	"github.com/labstack/echo/v4"
 	"io/ioutil"
 	"net/http"
@@ -15,6 +16,7 @@ const (
 )
 
 func HandleGitHubPost(ctx echo.Context) error {
+	gitstatefetteContext := ctx.(*context.GitstafetteContext)
 	body := ctx.Request().Body
 	defer body.Close()
 	messagePayload, err := ioutil.ReadAll(body)
@@ -30,7 +32,7 @@ func HandleGitHubPost(ctx echo.Context) error {
 
 	targetRepositoryID := headers[TargetIdHeader][0]
 	if cache.RepoWatcher.RepositoryIsWatched(targetRepositoryID) {
-		cache.Event(targetRepositoryID, messagePayload, headers)
+		cache.Event(targetRepositoryID, messagePayload, headers, gitstatefetteContext.RelayEndpoint)
 	} else {
 		fmt.Printf("Target %v is not a watched repository", targetRepositoryID)
 		return ctx.String(http.StatusNotAcceptable, "Event does not contain a watched repository")

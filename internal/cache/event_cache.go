@@ -4,13 +4,18 @@ import (
 	"fmt"
 	v1 "github.com/joostvdg/gitstafette/api/v1"
 	"net/http"
+	"net/url"
 	"time"
 )
 
-// TODO cache events for Repository
 // TODO register delivery endpoint for Repository
 // TODO configure Repositories with TOML
 // TODO delivery endpoint contains payloadEndpoint and healthCheckEndpoint
+// TODO periodically send events to relay endpoint -> if alive
+// TODO support custom CA/Certs for relay endpoint
+
+// TODO cleanup cached events if they are Relayed
+// TODO add write protection for the Events
 
 // TODO add lock
 var CachedEvents map[*v1.Repository][]*v1.WebhookEvent
@@ -19,8 +24,12 @@ func init() {
 	CachedEvents = make(map[*v1.Repository][]*v1.WebhookEvent)
 }
 
-func Event(targetRepositoryID string, eventBody []byte, headers http.Header) error {
+// TODO remove endpoint url/relay function from here
+
+func Event(targetRepositoryID string, eventBody []byte, headers http.Header, endpoint *url.URL) error {
+
 	webhookEvent := &v1.WebhookEvent{
+		IsRelayed: false,
 		Timestamp: time.Now(),
 		Headers:   headers,
 		EventBody: eventBody,

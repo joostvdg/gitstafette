@@ -1,4 +1,4 @@
-package v1
+package gitstafette_v1
 
 type Repositories map[string]*Repository
 

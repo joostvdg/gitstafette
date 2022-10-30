@@ -23,7 +23,7 @@ type Status struct {
 }
 
 // BasicRelay testing the relay functionality
-func BasicRelay(event *v1.WebhookEvent, relayEndpoint *url.URL) {
+func BasicRelay(event *v1.WebhookEventInternal, relayEndpoint *url.URL) {
 	client := resty.New()
 
 	request := client.R().SetBody(event.EventBody)
@@ -56,7 +56,7 @@ func RelayCachedEvents(serviceContext *context.ServiceContext) {
 
 			}
 		case <-ctx.Done(): // Activated when ctx.Done() closes
-			fmt.Println("Closing MulticastExistence")
+			fmt.Println("Closing RelayCachedEvents")
 			return
 		}
 	}
@@ -104,7 +104,7 @@ func RelayHealthCheck(serviceContext *context.ServiceContext) {
 				status.CounterOfFailedHealthChecks = 0
 			}
 		case <-ctx.Done(): // Activated when ctx.Done() closes
-			fmt.Println("Closing MulticastExistence")
+			fmt.Println("Closing RelayHealthCheck")
 			return
 		}
 	}

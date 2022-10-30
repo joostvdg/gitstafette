@@ -18,17 +18,17 @@ import (
 // TODO add write protection for the Events
 
 // TODO add lock
-var CachedEvents map[*v1.Repository][]*v1.WebhookEvent
+var CachedEvents map[*v1.Repository][]*v1.WebhookEventInternal
 
 func init() {
-	CachedEvents = make(map[*v1.Repository][]*v1.WebhookEvent)
+	CachedEvents = make(map[*v1.Repository][]*v1.WebhookEventInternal)
 }
 
 // TODO remove endpoint url/relay function from here
 
 func Event(targetRepositoryID string, eventBody []byte, headers http.Header, endpoint *url.URL) error {
 
-	webhookEvent := &v1.WebhookEvent{
+	webhookEvent := &v1.WebhookEventInternal{
 		IsRelayed: false,
 		Timestamp: time.Now(),
 		Headers:   headers,
@@ -37,7 +37,7 @@ func Event(targetRepositoryID string, eventBody []byte, headers http.Header, end
 	repository := RepoWatcher.GetRepository(targetRepositoryID)
 	repositoryEvents := CachedEvents[repository]
 	if repositoryEvents == nil {
-		repositoryEvents = make([]*v1.WebhookEvent, 0)
+		repositoryEvents = make([]*v1.WebhookEventInternal, 0)
 	}
 	repositoryEvents = append(repositoryEvents, webhookEvent)
 	CachedEvents[repository] = repositoryEvents

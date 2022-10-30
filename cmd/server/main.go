@@ -4,17 +4,20 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/joostvdg/gitstafette/internal/api/v1"
+	internal_api "github.com/joostvdg/gitstafette/internal/api/v1"
 	"github.com/joostvdg/gitstafette/internal/cache"
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
 	"github.com/joostvdg/gitstafette/internal/relay"
+	"google.golang.org/grpc"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	api "github.com/joostvdg/gitstafette/api/v1"
 	"github.com/labstack/echo/v4"
@@ -24,11 +27,18 @@ const delimiter = ","
 
 // TODO add flags for target for Relay
 
+type server struct {
+	api.UnimplementedGitstafetteServer
+}
+
 func main() {
 	port := flag.String("port", "1323", "Port used for hosting the server")
+	grpcPort := flag.String("grpcPort", "50051", "Port used for hosting the grpc server")
 	repositoryIDs := flag.String("repositories", "", "Comma separated list of GitHub repository IDs to listen for")
 	relayEndpoint := flag.String("relayEndpoint", "", "URL of the Relay Endpoint to deliver the captured events to")
 	flag.Parse()
+
+	fmt.Printf("Starting server, http port: %s, grpc port: %s\n", *port, *grpcPort)
 
 	relayEndpointURL, err := url.Parse(*relayEndpoint)
 	if err != nil {
@@ -68,15 +78,60 @@ func main() {
 		Context:       ctx,
 		RelayEndpoint: relayEndpointURL,
 	}
-	relay.RelayHealthCheck(serviceContext)
-	relay.RelayCachedEvents(serviceContext)
+	go relay.RelayHealthCheck(serviceContext)
+	go relay.RelayCachedEvents(serviceContext)
+
+	grpcServer := grpc.NewServer()
+	go func(s *grpc.Server) {
+		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", *grpcPort))
+		if err != nil {
+			log.Fatalf("failed to listen: %v", err)
+		}
+
+		api.RegisterGitstafetteServer(s, server{})
+		if err := s.Serve(grpcListener); err != nil {
+			log.Fatalf("failed to serve: %v", err)
+		}
+	}(grpcServer)
 
 	e.GET("/", func(c echo.Context) error {
 		return c.String(http.StatusOK, "Hello, World!")
 	})
-	e.POST("/v1/github/", v1.HandleGitHubPost)
-	e.GET("/v1/watchlist/", v1.HandleWatchListGet)
-	e.GET("/v1/events/:repo", v1.HandleRetrieveEventsForRepository)
-	e.Logger.Fatal(e.Start(":" + *port))
+	e.POST("/v1/github/", internal_api.HandleGitHubPost)
+	e.GET("/v1/watchlist/", internal_api.HandleWatchListGet)
+	e.GET("/v1/events/:repo", internal_api.HandleRetrieveEventsForRepository)
+
+	// Start Echo server
+	go func(echoPort string) {
+		if err := e.Start(":" + echoPort); err != nil && err != http.ErrServerClosed {
+			e.Logger.Fatal("shutting down the server")
+		}
+	}(*port)
+
+	// Wait for interrupt signal to gracefully shutdown the server with a timeout of 10 seconds.
+	// Use a buffered channel to avoid missing signals as recommended for signal.Notify
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+	<-quit
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	fmt.Println("Shutdown Echo server")
+	if err := e.Shutdown(ctx); err != nil {
+		e.Logger.Fatal(err)
+	}
+	fmt.Println("Shutdown GRPC server")
+	grpcServer.GracefulStop()
 	fmt.Printf("Shutting down!\n")
+
+}
+
+func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gitstafette_FetchWebhookEventsServer) error {
+	fmt.Printf("Not sending anything yet...\n")
+	log.Printf("Relaying webhook events for repository %s", request.RepositoryId)
+	dummyResponse := &api.WebhookEventsResponse{
+		WebhookEvents: nil,
+	}
+	srv.Send(dummyResponse)
+
+	return nil
 }

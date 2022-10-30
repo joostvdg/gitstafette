@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package gitstafette.v1;
+
+option go_package = "github.com/joostvdg/gitstafette/api/gitstafette_v1";
+
+service Gitstafette {
+  rpc FetchWebhookEvents (WebhookEventsRequest) returns (stream WebhookEventsResponse){}
+}
+
+message WebhookEventsRequest {
+  string client_id = 1;
+  string repository_id = 2;
+  uint64 last_received_event_id = 3;
+}
+
+message WebhookEventsResponse {
+  repeated WebhookEvent webhook_events = 1;
+}
+
+message WebhookEvent {
+    uint64 event_id = 1;
+    bytes body = 2;
+    bytes headers = 3;
+}

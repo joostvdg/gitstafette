@@ -9,7 +9,7 @@ import (
 
 // WatchedRepositoryList simple type for returning proper JSON
 type RepositoryEvents struct {
-	Events []*v1.WebhookEvent
+	Events []*v1.WebhookEventInternal
 }
 
 // TODO add other CRUD methods

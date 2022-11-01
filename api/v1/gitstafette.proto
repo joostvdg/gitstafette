@@ -19,7 +19,12 @@ message WebhookEventsResponse {
 }
 
 message WebhookEvent {
-    uint64 event_id = 1;
-    bytes body = 2;
-    bytes headers = 3;
+  uint64 event_id = 1;
+  bytes body = 2;
+  repeated Header headers = 3;
+}
+
+message Header {
+  string name = 1;
+  string values = 2;
 }

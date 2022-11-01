@@ -78,8 +78,13 @@ func main() {
 		Context:       ctx,
 		RelayEndpoint: relayEndpointURL,
 	}
-	go relay.RelayHealthCheck(serviceContext)
-	go relay.RelayCachedEvents(serviceContext)
+
+	if *relayEndpoint == "" {
+		fmt.Printf("RelayEndpoint is empty, disabling relay push\n")
+	} else {
+		go relay.RelayHealthCheck(serviceContext)
+		go relay.RelayCachedEvents(serviceContext)
+	}
 
 	grpcServer := grpc.NewServer()
 	go func(s *grpc.Server) {
@@ -126,12 +131,51 @@ func main() {
 }
 
 func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gitstafette_FetchWebhookEventsServer) error {
-	fmt.Printf("Not sending anything yet...\n")
 	log.Printf("Relaying webhook events for repository %s", request.RepositoryId)
-	dummyResponse := &api.WebhookEventsResponse{
-		WebhookEvents: nil,
-	}
-	srv.Send(dummyResponse)
 
+	clock := time.NewTicker(5 * time.Second)
+	for {
+		select {
+		case <-clock.C:
+			events, err := retrieveCachedEventsForRepository(request.RepositoryId)
+
+			// TODO properly handleerror
+			if err != nil {
+				log.Printf("Could not get events for Repo: %v\n", err)
+			}
+			response := &api.WebhookEventsResponse{
+				WebhookEvents: events,
+			}
+			srv.Send(response)
+		}
+	}
 	return nil
+}
+
+func retrieveCachedEventsForRepository(repositoryId string) ([]*api.WebhookEvent, error) {
+	repository := cache.RepoWatcher.GetRepository(repositoryId)
+	events := make([]*api.WebhookEvent, 0)
+	if repository == nil {
+		return events, fmt.Errorf("cannot fetch events for empty repository id")
+	}
+	cachedEvents := cache.CachedEvents[repository]
+	for _, cachedEvent := range cachedEvents {
+		headers := make([]*api.Header, len(cachedEvent.Headers))
+		for name, values := range cachedEvent.Headers {
+			value := values[0]
+			header := &api.Header{
+				Name:   name,
+				Values: value,
+			}
+			headers = append(headers, header)
+		}
+
+		event := &api.WebhookEvent{
+			EventId: 0, // TDODO handle eventIDs
+			Body:    cachedEvent.EventBody,
+			Headers: headers,
+		}
+		events = append(events, event)
+	}
+	return events, nil
 }

@@ -52,11 +52,17 @@ func main() {
 				response, err := stream.Recv()
 				if err == io.EOF {
 					serverClosed <- true // server has ended the stream
+					continue
 				}
 				if err != nil {
 					log.Printf("Error resceiving stream: %v\n", err) // is this recoverable or not?
+					continue
 				}
-				log.Printf("Response received: %v", response.WebhookEvents)
+
+				log.Printf("Received %d WebhookEvents", len(response.WebhookEvents))
+				for _, event := range response.WebhookEvents {
+					log.Printf("Event: %d, body size: %d, number of headers:  %d\n", event.EventId, len(event.Body), len(event.Headers))
+				}
 			case <-ctx.Done(): // Activated when ctx.Done() closes
 				fmt.Println("Closing FetchWebhookEvents")
 				return

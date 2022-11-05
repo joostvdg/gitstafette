@@ -15,15 +15,12 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	api "github.com/joostvdg/gitstafette/api/v1"
 	"github.com/labstack/echo/v4"
 )
-
-const delimiter = ","
 
 // TODO add flags for target for Relay
 
@@ -46,19 +43,7 @@ func main() {
 		return
 	}
 
-	if *repositoryIDs == "" || len(*repositoryIDs) <= 1 {
-		log.Fatal("Did not receive any RepositoryID to watch")
-	} else if strings.Contains(*repositoryIDs, delimiter) {
-		repoIds := strings.Split(*repositoryIDs, delimiter)
-		for _, repoID := range repoIds {
-			repository := api.Repository{ID: repoID}
-			cache.RepoWatcher.AddRepository(&repository)
-		}
-	} else {
-		repository := api.Repository{ID: *repositoryIDs}
-		cache.RepoWatcher.AddRepository(&repository)
-	}
-
+	cache.RepoWatcher.Init(*repositoryIDs)
 	cache.RepoWatcher.ReportWatchedRepositories()
 
 	e := echo.New()
@@ -80,7 +65,7 @@ func main() {
 	}
 
 	if *relayEndpoint == "" {
-		fmt.Printf("RelayEndpoint is empty, disabling relay push\n")
+		log.Printf("RelayEndpoint is empty, disabling relay push\n")
 	} else {
 		go relay.RelayHealthCheck(serviceContext)
 		go relay.RelayCachedEvents(serviceContext)
@@ -97,6 +82,7 @@ func main() {
 		if err := s.Serve(grpcListener); err != nil {
 			log.Fatalf("failed to serve: %v", err)
 		}
+		log.Println("Shutdown GRPC server")
 	}(grpcServer)
 
 	e.GET("/", func(c echo.Context) error {
@@ -120,19 +106,20 @@ func main() {
 	<-quit
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	fmt.Println("Shutdown Echo server")
+	log.Println("Shutting down Echo server")
 	if err := e.Shutdown(ctx); err != nil {
 		e.Logger.Fatal(err)
 	}
-	fmt.Println("Shutdown GRPC server")
+	log.Println("Shutting down GRPC server")
 	grpcServer.GracefulStop()
-	fmt.Printf("Shutting down!\n")
-
+	cache.PrepareForShutdown()
+	log.Printf("Shutting down!\n")
 }
 
 func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gitstafette_FetchWebhookEventsServer) error {
 	log.Printf("Relaying webhook events for repository %s", request.RepositoryId)
-
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	clock := time.NewTicker(5 * time.Second)
 	for {
 		select {
@@ -147,8 +134,13 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 				WebhookEvents: events,
 			}
 			srv.Send(response)
+
+		case <-ctx.Done(): // Activated when ctx.Done() closes
+			log.Println("Closing FetchWebhookEvents")
+			return nil
 		}
 	}
+	log.Println("Stopped fetching webhooks")
 	return nil
 }
 

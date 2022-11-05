@@ -69,7 +69,7 @@ Request method: POST
 content-type: application/json
 User-Agent: GitHub-Hookshot/ede37db
 X-GitHub-Delivery: d4049330-377e-11ed-9c2e-1ae286aab35f
-X-GitHub-Event: ping
+X-GitHub-InternalEvent: ping
 X-GitHub-Hook-ID: 380052596
 X-GitHub-Hook-Installation-Target-ID: 537845873
 X-GitHub-Hook-Installation-Target-Type: repository
@@ -115,7 +115,7 @@ func doHealthCheck(relayEndpoint *url.URL, repositoryId string) (bool, error) {
 	fmt.Printf("Doing healthcheck for relay %v (using repo %v)\n", relayEndpoint.String(), repositoryId)
 	client := resty.New()
 	response, err := client.R().
-		SetHeader("X-GitHub-Event", "ping").
+		SetHeader("X-GitHub-InternalEvent", "ping").
 		SetHeader("X-GitHub-Hook-Installation-Target-Type", "repository").
 		SetHeader("X-GitHub-Hook-Installation-Target-ID", repositoryId).
 		SetHeader("User-Agent", "Gitstafette").

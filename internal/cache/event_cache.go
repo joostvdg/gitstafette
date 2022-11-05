@@ -1,10 +1,9 @@
 package cache
 
 import (
-	"fmt"
-	v1 "github.com/joostvdg/gitstafette/api/v1"
+	api "github.com/joostvdg/gitstafette/api/v1"
+	"log"
 	"net/http"
-	"net/url"
 	"time"
 )
 
@@ -16,33 +15,63 @@ import (
 
 // TODO cleanup cached events if they are Relayed
 // TODO add write protection for the Events
+// TODO use Redis for caching if we can
+// TODO so, we get an interface -> InMemory and Redis impls?
 
 // TODO add lock
-var CachedEvents map[*v1.Repository][]*v1.WebhookEventInternal
+var CachedEvents map[*api.Repository][]*api.WebhookEventInternal
 
 func init() {
-	CachedEvents = make(map[*v1.Repository][]*v1.WebhookEventInternal)
+	CachedEvents = make(map[*api.Repository][]*api.WebhookEventInternal)
 }
 
-// TODO remove endpoint url/relay function from here
+// TODO do this properly
+func PrepareForShutdown() {
+	CachedEvents = make(map[*api.Repository][]*api.WebhookEventInternal)
+}
 
-func Event(targetRepositoryID string, eventBody []byte, headers http.Header, endpoint *url.URL) error {
+func Event(targetRepositoryID string, event *api.WebhookEvent) error {
+	var headers http.Header
+	headers = make(map[string][]string)
 
-	webhookEvent := &v1.WebhookEventInternal{
+	for _, header := range event.Headers {
+		key := header.Name
+		value := header.Values
+		values := make([]string, 1)
+		values[0] = value
+		headers[key] = values
+	}
+
+	webhookEvent := &api.WebhookEventInternal{
+		IsRelayed: false,
+		Timestamp: time.Now(),
+		Headers:   headers,
+		EventBody: event.Body,
+	}
+	return processEvent(targetRepositoryID, webhookEvent)
+
+}
+
+func InternalEvent(targetRepositoryID string, eventBody []byte, headers http.Header) error {
+	webhookEvent := &api.WebhookEventInternal{
 		IsRelayed: false,
 		Timestamp: time.Now(),
 		Headers:   headers,
 		EventBody: eventBody,
 	}
+	return processEvent(targetRepositoryID, webhookEvent)
+}
+
+func processEvent(targetRepositoryID string, event *api.WebhookEventInternal) error {
 	repository := RepoWatcher.GetRepository(targetRepositoryID)
 	repositoryEvents := CachedEvents[repository]
 	if repositoryEvents == nil {
-		repositoryEvents = make([]*v1.WebhookEventInternal, 0)
+		repositoryEvents = make([]*api.WebhookEventInternal, 0)
 	}
-	repositoryEvents = append(repositoryEvents, webhookEvent)
+	repositoryEvents = append(repositoryEvents, event)
 	CachedEvents[repository] = repositoryEvents
 
-	fmt.Printf("Cached event for repository %v, current holding %d events for the repository",
+	log.Printf("Cached event for repository %v, current holding %d events for the repository",
 		targetRepositoryID, len(repositoryEvents))
 	return nil
 }

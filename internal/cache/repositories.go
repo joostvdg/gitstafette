@@ -2,8 +2,12 @@ package cache
 
 import (
 	"fmt"
-	v1 "github.com/joostvdg/gitstafette/api/v1"
+	api "github.com/joostvdg/gitstafette/api/v1"
+	"log"
+	"strings"
 )
+
+const delimiter = ","
 
 var RepoWatcher *RepositoryWatcher
 
@@ -12,20 +16,20 @@ func init() {
 }
 
 type RepositoryWatcher struct {
-	Repositories v1.Repositories
+	Repositories api.Repositories
 }
 
 func CreateRepositoryWatcher() *RepositoryWatcher {
 	return &RepositoryWatcher{
-		Repositories: make(v1.Repositories),
+		Repositories: make(api.Repositories),
 	}
 }
 
-func (r *RepositoryWatcher) AddRepository(repository *v1.Repository) {
+func (r *RepositoryWatcher) AddRepository(repository *api.Repository) {
 	r.Repositories[repository.ID] = repository
 }
 
-func (r *RepositoryWatcher) GetRepository(repositoryID string) *v1.Repository {
+func (r *RepositoryWatcher) GetRepository(repositoryID string) *api.Repository {
 	return r.Repositories[repositoryID]
 }
 
@@ -48,4 +52,19 @@ func (r *RepositoryWatcher) WatchedRepositories() []string {
 		i++
 	}
 	return keys
+}
+
+func (r *RepositoryWatcher) Init(repositoryIDs string) {
+	if repositoryIDs == "" || len(repositoryIDs) <= 1 {
+		log.Fatal("Did not receive any RepositoryID to watch")
+	} else if strings.Contains(repositoryIDs, delimiter) {
+		repoIds := strings.Split(repositoryIDs, delimiter)
+		for _, repoID := range repoIds {
+			repository := api.Repository{ID: repoID}
+			r.AddRepository(&repository)
+		}
+	} else {
+		repository := api.Repository{ID: repositoryIDs}
+		r.AddRepository(&repository)
+	}
 }

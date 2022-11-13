@@ -29,7 +29,7 @@ func HandleGitHubPost(ctx echo.Context) error {
 	}
 
 	targetRepositoryID := headers[TargetIdHeader][0]
-	if cache.RepoWatcher.RepositoryIsWatched(targetRepositoryID) {
+	if cache.Repositories.RepositoryIsWatched(targetRepositoryID) {
 		cache.InternalEvent(targetRepositoryID, messagePayload, headers)
 	} else {
 		fmt.Printf("Target %v is not a watched repository", targetRepositoryID)

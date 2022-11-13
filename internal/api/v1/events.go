@@ -22,12 +22,7 @@ func HandleRetrieveEventsForRepository(ctx echo.Context) error {
 		return ctx.String(http.StatusBadRequest, "This request requires a valid RepositoryID")
 	}
 
-	repository := cache.RepoWatcher.GetRepository(repositoryID)
-	if repository == nil {
-		return ctx.String(http.StatusNotFound, "Requested Repository is not found")
-	}
-
-	events := cache.CachedEvents[repository]
+	events := cache.Store.RetrieveEventsForRepository(repositoryID)
 	eventList := RepositoryEvents{events}
 	return ctx.JSON(http.StatusOK, eventList)
 }

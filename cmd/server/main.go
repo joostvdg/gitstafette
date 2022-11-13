@@ -33,19 +33,53 @@ func main() {
 	grpcPort := flag.String("grpcPort", "50051", "Port used for hosting the grpc server")
 	repositoryIDs := flag.String("repositories", "", "Comma separated list of GitHub repository IDs to listen for")
 	relayEndpoint := flag.String("relayEndpoint", "", "URL of the Relay Endpoint to deliver the captured events to")
+	redisDatabase := flag.String("redisDatabase", "0", "Database used for redis")
+	redisHost := flag.String("redisHost", "localhost", "Host of the Redis server")
+	redisPort := flag.String("redisPort", "6379", "Port of the Redis server")
+	redisPassword := flag.String("redisPassword", "", "Password of the Redis server (default is no password")
 	flag.Parse()
 
-	fmt.Printf("Starting server, http port: %s, grpc port: %s\n", *port, *grpcPort)
+	log.Printf("Starting server, http port: %s, grpc port: %s\n", *port, *grpcPort)
 
-	relayEndpointURL, err := url.Parse(*relayEndpoint)
-	if err != nil {
-		fmt.Println("Malformed URL: ", err.Error())
-		return
+	redisConfig := &cache.RedisConfig{
+		Host:     *redisHost,
+		Port:     *redisPort,
+		Password: *redisPassword,
+		Database: *redisDatabase,
+	}
+	cache.InitCache(*repositoryIDs, redisConfig)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	serviceContext := &gcontext.ServiceContext{
+		Context: ctx,
 	}
 
-	cache.RepoWatcher.Init(*repositoryIDs)
-	cache.RepoWatcher.ReportWatchedRepositories()
+	var relayEndpointURL *url.URL
+	if *relayEndpoint == "" {
+		relayEndpointURL = relay.InitiateRelayOrDie(*relayEndpoint, serviceContext)
+	}
+	grpcServer := initializeGRPCServer(*grpcPort)
+	echoServer := initializeEchoServer(relayEndpointURL, *port)
 
+	// Wait for interrupt signal to gracefully shut down the server with a timeout of 10 seconds.
+	// Use a buffered channel to avoid missing signals as recommended for signal.Notify
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+	<-quit
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	log.Println("Shutting down Echo server")
+	if err := echoServer.Shutdown(ctx); err != nil {
+		echoServer.Logger.Fatal(err)
+	}
+	log.Println("Shutting down GRPC server")
+	grpcServer.GracefulStop()
+	cache.PrepareForShutdown()
+	log.Printf("Shutting down!\n")
+}
+
+func initializeEchoServer(relayEndpointURL *url.URL, port string) *echo.Echo {
 	e := echo.New()
 	e.Use(func(e echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -56,34 +90,6 @@ func main() {
 			return e(gitstatefetteContext)
 		}
 	})
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	serviceContext := &gcontext.ServiceContext{
-		Context:       ctx,
-		RelayEndpoint: relayEndpointURL,
-	}
-
-	if *relayEndpoint == "" {
-		log.Printf("RelayEndpoint is empty, disabling relay push\n")
-	} else {
-		go relay.RelayHealthCheck(serviceContext)
-		go relay.RelayCachedEvents(serviceContext)
-	}
-
-	grpcServer := grpc.NewServer()
-	go func(s *grpc.Server) {
-		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", *grpcPort))
-		if err != nil {
-			log.Fatalf("failed to listen: %v", err)
-		}
-
-		api.RegisterGitstafetteServer(s, server{})
-		if err := s.Serve(grpcListener); err != nil {
-			log.Fatalf("failed to serve: %v", err)
-		}
-		log.Println("Shutdown GRPC server")
-	}(grpcServer)
 
 	e.GET("/", func(c echo.Context) error {
 		return c.String(http.StatusOK, "Hello, World!")
@@ -97,23 +103,25 @@ func main() {
 		if err := e.Start(":" + echoPort); err != nil && err != http.ErrServerClosed {
 			e.Logger.Fatal("shutting down the server")
 		}
-	}(*port)
+	}(port)
+	return e
+}
 
-	// Wait for interrupt signal to gracefully shutdown the server with a timeout of 10 seconds.
-	// Use a buffered channel to avoid missing signals as recommended for signal.Notify
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
-	<-quit
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	log.Println("Shutting down Echo server")
-	if err := e.Shutdown(ctx); err != nil {
-		e.Logger.Fatal(err)
-	}
-	log.Println("Shutting down GRPC server")
-	grpcServer.GracefulStop()
-	cache.PrepareForShutdown()
-	log.Printf("Shutting down!\n")
+func initializeGRPCServer(grpcPort string) *grpc.Server {
+	grpcServer := grpc.NewServer()
+	go func(s *grpc.Server) {
+		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
+		if err != nil {
+			log.Fatalf("failed to listen: %v", err)
+		}
+
+		api.RegisterGitstafetteServer(s, server{})
+		if err := s.Serve(grpcListener); err != nil {
+			log.Fatalf("failed to serve: %v", err)
+		}
+		log.Println("Shutdown GRPC server")
+	}(grpcServer)
+	return grpcServer
 }
 
 func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gitstafette_FetchWebhookEventsServer) error {
@@ -134,37 +142,50 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 				WebhookEvents: events,
 			}
 			srv.Send(response)
+			updateRelayStatus(events, request.RepositoryId)
 
 		case <-ctx.Done(): // Activated when ctx.Done() closes
 			log.Println("Closing FetchWebhookEvents")
 			return nil
 		}
 	}
-	log.Println("Stopped fetching webhooks")
-	return nil
+}
+
+func updateRelayStatus(events []*api.WebhookEvent, repositoryId string) {
+	cachedEvents := cache.Store.RetrieveEventsForRepository(repositoryId)
+	for _, event := range events {
+		eventId := event.EventId
+		for _, cachedEvent := range cachedEvents {
+			if cachedEvent.ID == eventId {
+				cachedEvent.IsRelayed = true
+			}
+		}
+	}
 }
 
 func retrieveCachedEventsForRepository(repositoryId string) ([]*api.WebhookEvent, error) {
-	repository := cache.RepoWatcher.GetRepository(repositoryId)
 	events := make([]*api.WebhookEvent, 0)
-	if repository == nil {
+	if !cache.Repositories.RepositoryIsWatched(repositoryId) {
 		return events, fmt.Errorf("cannot fetch events for empty repository id")
 	}
-	cachedEvents := cache.CachedEvents[repository]
+	cachedEvents := cache.Store.RetrieveEventsForRepository(repositoryId)
 	for _, cachedEvent := range cachedEvents {
+		if cachedEvent.IsRelayed {
+			continue
+		}
+
 		headers := make([]*api.Header, len(cachedEvent.Headers))
-		for name, values := range cachedEvent.Headers {
-			value := values[0]
+		for _, header := range cachedEvent.Headers {
 			header := &api.Header{
-				Name:   name,
-				Values: value,
+				Name:   header.Key,
+				Values: header.FirstValue,
 			}
 			headers = append(headers, header)
 		}
 
 		event := &api.WebhookEvent{
-			EventId: 0, // TDODO handle eventIDs
-			Body:    cachedEvent.EventBody,
+			EventId: cachedEvent.ID,
+			Body:    []byte(cachedEvent.EventBody),
 			Headers: headers,
 		}
 		events = append(events, event)

@@ -1,13 +1,18 @@
 package gitstafette_v1
 
 import (
-	"net/http"
 	"time"
 )
 
 type WebhookEventInternal struct {
-	IsRelayed bool
-	Timestamp time.Time
-	Headers   http.Header
-	EventBody []byte
+	ID        string               `json:"id"`
+	IsRelayed bool                 `json:"isRelayed"`
+	Timestamp time.Time            `json:"timestamp"`
+	Headers   []WebhookEventHeader `json:"headers"`
+	EventBody string               `json:"eventBody"`
+}
+
+type WebhookEventHeader struct {
+	Key        string `json:"key"`
+	FirstValue string `json:"firstValue"`
 }

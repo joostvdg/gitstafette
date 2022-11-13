@@ -6,9 +6,11 @@ import (
 	v1 "github.com/joostvdg/gitstafette/api/v1"
 	"github.com/joostvdg/gitstafette/internal/cache"
 	"github.com/joostvdg/gitstafette/internal/context"
-	"time"
-
+	gcontext "github.com/joostvdg/gitstafette/internal/context"
+	"log"
+	"net/http"
 	"net/url"
+	"time"
 )
 
 // TODO periodically relay message to relay endpoint
@@ -22,12 +24,43 @@ type Status struct {
 	TimeOfLastFailure           time.Time
 }
 
+// InitiateRelayOrDie parses the relayEndpoint as URL or dies (fatal).
+// If it is a valid URL, it starts the health check service and relay service to this URL.
+func InitiateRelayOrDie(relayEndpoint string, serviceContext *gcontext.ServiceContext) *url.URL {
+	relayEndpointURL, err := url.Parse(relayEndpoint)
+	if err != nil {
+		log.Fatal("Malformed URL: ", err.Error())
+	}
+	if relayEndpoint == "" {
+		log.Println("RelayEndpoint is empty, disabling relay push")
+	} else {
+		go RelayHealthCheck(serviceContext)
+		go RelayCachedEvents(serviceContext)
+	}
+	return relayEndpointURL
+}
+
+// TODO API should have a function To/From internal/external rep
+func eventHeadersToHTTPHeaders(eventHeaders []v1.WebhookEventHeader) http.Header {
+	var headers http.Header
+	headers = make(map[string][]string)
+
+	for _, header := range eventHeaders {
+		key := header.Key
+		value := header.FirstValue
+		values := make([]string, 1)
+		values[0] = value
+		headers[key] = values
+	}
+	return headers
+}
+
 // BasicRelay testing the relay functionality
 func BasicRelay(event *v1.WebhookEventInternal, relayEndpoint *url.URL) {
 	client := resty.New()
 
 	request := client.R().SetBody(event.EventBody)
-	request.Header = event.Headers
+	request.Header = eventHeadersToHTTPHeaders(event.Headers)
 	response, err := request.Post(relayEndpoint.String())
 	if err != nil {
 		fmt.Printf("Encountered an error when relaying: %v\n", err)
@@ -44,16 +77,13 @@ func RelayCachedEvents(serviceContext *context.ServiceContext) {
 		select {
 		case <-clock.C:
 			// TODO handle properly
-			events := cache.CachedEvents
-			for _, webhookEvents := range events {
-				for _, webhookEvent := range webhookEvents {
-					if !webhookEvent.IsRelayed {
-						BasicRelay(webhookEvent, serviceContext.RelayEndpoint)
-						// TODO add check on relay, so that we only set IsRelayed if we actually did
-						webhookEvent.IsRelayed = true
-					}
+			events := cache.Store.RetrieveEventsForRepository("")
+			for _, webhookEvent := range events {
+				if !webhookEvent.IsRelayed {
+					BasicRelay(webhookEvent, serviceContext.RelayEndpoint)
+					// TODO add check on relay, so that we only set IsRelayed if we actually did
+					webhookEvent.IsRelayed = true
 				}
-
 			}
 		case <-ctx.Done(): // Activated when ctx.Done() closes
 			fmt.Println("Closing RelayCachedEvents")
@@ -87,9 +117,9 @@ func RelayHealthCheck(serviceContext *context.ServiceContext) {
 		select {
 		case <-clock.C:
 			// TODO do healthcheck
-			keys := cache.RepoWatcher.WatchedRepositories()
+			repoIds := cache.Repositories.Repositories
 			status.TimeOfLastCheck = time.Now()
-			healthy, err := doHealthCheck(serviceContext.RelayEndpoint, keys[0])
+			healthy, err := doHealthCheck(serviceContext.RelayEndpoint, repoIds[0])
 
 			if err != nil {
 				fmt.Printf("Encountered an error doing healthcheck on relay: %v\n", err)

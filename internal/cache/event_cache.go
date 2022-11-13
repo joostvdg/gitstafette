@@ -1,9 +1,11 @@
 package cache
 
 import (
+	"bytes"
 	api "github.com/joostvdg/gitstafette/api/v1"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -18,60 +20,106 @@ import (
 // TODO use Redis for caching if we can
 // TODO so, we get an interface -> InMemory and Redis impls?
 
-// TODO add lock
-var CachedEvents map[*api.Repository][]*api.WebhookEventInternal
+const DeliveryIdHeader = "X-Github-Delivery"
+const delimiter = ","
 
-func init() {
-	CachedEvents = make(map[*api.Repository][]*api.WebhookEventInternal)
+var Store EventStore
+var Repositories RepositoryWatcher
+
+type EventStore interface {
+	Store(repositoryId string, event *api.WebhookEventInternal) bool
+	RetrieveEventsForRepository(repositoryId string) []*api.WebhookEventInternal
+	CountEventsForRepository(repositoryId string) int
+	IsConnected() bool
 }
 
-// TODO do this properly
+func InitCache(repositoryIDs string, redisConfig *RedisConfig) {
+	if repositoryIDs == "" || len(repositoryIDs) <= 1 {
+		log.Fatal("Did not receive any RepositoryID to watch")
+	}
+
+	var repoIds []string
+	if strings.Contains(repositoryIDs, delimiter) {
+		repoIds = strings.Split(repositoryIDs, delimiter)
+	} else {
+		repoIds = []string{repositoryIDs}
+	}
+
+	Repositories = createRepositoryWatcher()
+	for _, repoId := range repoIds {
+		Repositories.AddRepository(repoId)
+	}
+	Store = initializeStore(redisConfig)
+}
+
+func initializeStore(config *RedisConfig) EventStore {
+	var store EventStore
+	store = NewInMemoryStore()
+
+	if config != nil {
+		redisStore := NewRedisStore(config)
+		if redisStore.isConnected {
+			store = redisStore
+		}
+	}
+	return store
+}
+
+// TODO should probably have some logic for closing the stores
+// for example, disconnecting the Redis client if it is connected
 func PrepareForShutdown() {
-	CachedEvents = make(map[*api.Repository][]*api.WebhookEventInternal)
+
 }
 
 func Event(targetRepositoryID string, event *api.WebhookEvent) error {
-	var headers http.Header
-	headers = make(map[string][]string)
-
+	webhookEventHeaders := make([]api.WebhookEventHeader, len(event.Headers))
+	deliveryId := ""
 	for _, header := range event.Headers {
 		key := header.Name
 		value := header.Values
-		values := make([]string, 1)
-		values[0] = value
-		headers[key] = values
+		webhookEventHeader := api.WebhookEventHeader{
+			Key:        key,
+			FirstValue: value,
+		}
+		if key == DeliveryIdHeader {
+			deliveryId = value
+		}
+		webhookEventHeaders = append(webhookEventHeaders, webhookEventHeader)
 	}
 
+	eventBody := bytes.NewBuffer(event.Body).String()
 	webhookEvent := &api.WebhookEventInternal{
+		ID:        deliveryId,
 		IsRelayed: false,
 		Timestamp: time.Now(),
-		Headers:   headers,
-		EventBody: event.Body,
-	}
-	return processEvent(targetRepositoryID, webhookEvent)
-
-}
-
-func InternalEvent(targetRepositoryID string, eventBody []byte, headers http.Header) error {
-	webhookEvent := &api.WebhookEventInternal{
-		IsRelayed: false,
-		Timestamp: time.Now(),
-		Headers:   headers,
+		Headers:   webhookEventHeaders,
 		EventBody: eventBody,
 	}
-	return processEvent(targetRepositoryID, webhookEvent)
+	Store.Store(targetRepositoryID, webhookEvent)
+	return nil
 }
 
-func processEvent(targetRepositoryID string, event *api.WebhookEventInternal) error {
-	repository := RepoWatcher.GetRepository(targetRepositoryID)
-	repositoryEvents := CachedEvents[repository]
-	if repositoryEvents == nil {
-		repositoryEvents = make([]*api.WebhookEventInternal, 0)
-	}
-	repositoryEvents = append(repositoryEvents, event)
-	CachedEvents[repository] = repositoryEvents
+func InternalEvent(targetRepositoryID string, eventBodyBytes []byte, headers http.Header) error {
+	deliveryId := headers.Get(DeliveryIdHeader)
 
-	log.Printf("Cached event for repository %v, current holding %d events for the repository",
-		targetRepositoryID, len(repositoryEvents))
+	webhookEventHeaders := make([]api.WebhookEventHeader, len(headers))
+	for key, value := range headers {
+		webhookEventHeader := api.WebhookEventHeader{
+			Key:        key,
+			FirstValue: value[0],
+		}
+		webhookEventHeaders = append(webhookEventHeaders, webhookEventHeader)
+	}
+
+	eventBody := bytes.NewBuffer(eventBodyBytes).String()
+	webhookEvent := &api.WebhookEventInternal{
+		ID:        deliveryId,
+		IsRelayed: false,
+		Timestamp: time.Now(),
+		Headers:   webhookEventHeaders,
+		EventBody: eventBody,
+	}
+
+	Store.Store(targetRepositoryID, webhookEvent)
 	return nil
 }

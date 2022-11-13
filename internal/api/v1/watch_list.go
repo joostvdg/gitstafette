@@ -16,8 +16,8 @@ type WatchedRepositoryList struct {
 // HandleWatchListGet handles API call for listing wich repositories are currently watched
 func HandleWatchListGet(ctx echo.Context) error {
 
-	keys := cache.RepoWatcher.WatchedRepositories()
-	list := WatchedRepositoryList{keys}
+	repoIds := cache.Repositories.Repositories
+	list := WatchedRepositoryList{repoIds}
 
 	return ctx.JSON(http.StatusOK, list)
 }

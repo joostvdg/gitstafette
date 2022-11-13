@@ -12,12 +12,13 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"io"
 	"log"
-	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 )
+
+// TODO do not close if we have not relayed our events yet!
 
 func main() {
 	serverPort := flag.String("port", "50051", "Port used for connecting to the GRPC Server")
@@ -31,8 +32,8 @@ func main() {
 	serviceContext := &gcontext.ServiceContext{
 		Context: ctx,
 	}
-	initiateRelayOrDie(*relayEndpoint, serviceContext)
-	initiateCaching(*repositoryId)
+	relay.InitiateRelayOrDie(*relayEndpoint, serviceContext)
+	cache.InitCache(*repositoryId, nil)
 
 	stream := initializeWebhookEventStreamOrDie(*repositoryId, *serverAddress, *serverPort, ctx)
 	handleWebhookEventStream(stream, *repositoryId, ctx)
@@ -93,23 +94,4 @@ func initializeWebhookEventStreamOrDie(repositoryId string, serverAddress string
 		log.Fatalf("could not open stream: %v\n", err)
 	}
 	return stream
-}
-
-func initiateCaching(repositoryId string) {
-	cache.RepoWatcher.Init(repositoryId)
-	cache.RepoWatcher.ReportWatchedRepositories()
-}
-
-func initiateRelayOrDie(relayEndpoint string, serviceContext *gcontext.ServiceContext) *url.URL {
-	relayEndpointURL, err := url.Parse(relayEndpoint)
-	if err != nil {
-		log.Fatalf("Malformed URL: ", err.Error())
-	}
-	if relayEndpoint == "" {
-		fmt.Printf("RelayEndpoint is empty, disabling relay push\n")
-	} else {
-		go relay.RelayHealthCheck(serviceContext)
-		go relay.RelayCachedEvents(serviceContext)
-	}
-	return relayEndpointURL
 }

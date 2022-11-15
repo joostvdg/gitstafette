@@ -9,6 +9,7 @@ import (
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
 	"github.com/joostvdg/gitstafette/internal/relay"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"log"
 	"net"
 	"net/http"
@@ -115,6 +116,7 @@ func initializeGRPCServer(grpcPort string) *grpc.Server {
 			log.Fatalf("failed to listen: %v", err)
 		}
 
+		grpc_health_v1.RegisterHealthServer(grpcServer, &HealthCheckService{})
 		api.RegisterGitstafetteServer(s, server{})
 		if err := s.Serve(grpcListener); err != nil {
 			log.Fatalf("failed to serve: %v", err)
@@ -191,4 +193,21 @@ func retrieveCachedEventsForRepository(repositoryId string) ([]*api.WebhookEvent
 		events = append(events, event)
 	}
 	return events, nil
+}
+
+// HealthCheckService implements grpc_health_v1.HealthServer
+type HealthCheckService struct{}
+
+// TODO add actual health checks
+func (s *HealthCheckService) Check(ctx context.Context, req *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
+	return &grpc_health_v1.HealthCheckResponse{
+		Status: grpc_health_v1.HealthCheckResponse_SERVING,
+	}, nil
+}
+
+// TODO add actual health checks
+func (s *HealthCheckService) Watch(req *grpc_health_v1.HealthCheckRequest, server grpc_health_v1.Health_WatchServer) error {
+	return server.Send(&grpc_health_v1.HealthCheckResponse{
+		Status: grpc_health_v1.HealthCheckResponse_SERVING,
+	})
 }

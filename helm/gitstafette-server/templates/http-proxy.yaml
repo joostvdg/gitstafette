@@ -1,0 +1,33 @@
+{{- if .Values.httpproxy.enabled -}}
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: {{ include "gitstafette-server.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gitstafette-server.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ include "gitstafette-server.fullname" . }}
+  {{- with .Values.httpproxy.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: contour
+  routes:
+    - conditions:
+        - prefix: {{ .Values.httpproxy.grpc.prefix }}
+      services:
+        - name: {{ include "gitstafette-server.fullname" . }}
+          port: {{ .Values.grpcPort }}
+          protocol: h2c
+    - conditions:
+        - prefix: {{ .Values.httpproxy.http.prefix }}
+      services:
+        - name: {{ include "gitstafette-server.fullname" . }}
+          port: {{ .Values.service.port }}
+      pathRewritePolicy:
+        replacePrefix:
+          - replacement: {{ .Values.httpproxy.http.replacement }}
+  virtualhost:
+    fqdn:  {{ .Values.httpproxy.fqdn }}
+  {{- end }}

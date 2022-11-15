@@ -1,0 +1,25 @@
+repositories: "537845873"
+grpcPort: 50051
+
+image:
+  tag: "0.1.0-1b8922b"
+
+resources:
+  limits:
+    memory: 16Mi
+  requests:
+    cpu: 250m
+    memory: 16Mi
+
+httpproxy:
+  enabled: true
+  fqdn: lemon.fritz.box
+  grpc:
+    prefix: /
+    replacement: /
+  http:
+    prefix: /api
+    replacement: /
+
+ingress:
+  enabled: false

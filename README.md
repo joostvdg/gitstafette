@@ -2,6 +2,28 @@
 
 Git Webhook Relay demo app
 
+## Testing Kubernetes
+
+### HTTP
+
+```shell
+kubectl port-forward -n gitstafette svc/gitstafette-server 7777:1323
+```
+
+```shell
+http :7777
+```
+
+### GRPC
+
+```shell
+kubectl port-forward -n gitstafette svc/gitstafette-server 7777:50051
+```
+
+```shell
+grpc-health-probe -addr=localhost:7777
+```
+
 ## Resources
 
 * https://developer.redis.com/develop/golang/

@@ -2,7 +2,7 @@ repositories: "537845873"
 grpcPort: 50051
 
 image:
-  tag: "0.1.0-1b8922b"
+  tag: "0.1.0-dc55a86"
 
 resources:
   limits:

@@ -2,6 +2,34 @@
 
 Git Webhook Relay demo app
 
+## TODO
+
+* Helm support
+  * Helm chart for Server
+  * Helm chart for Client
+  * improve health checks
+  * define sensible resources
+* Carvel package
+  * personal carvel package repository
+  * on GHCR
+* Kubernetes Controller + CR for generating clients
+  * Metacontroller?
+  * Operator?
+  * (GRPC) Server should support multiple clients
+  * add CR to cluster for individual Repo's, then spawn a client
+* Mutual TLS with self-signed certs / Custom CA
+* OpenTelemetry metrics
+* OpenTracing metrics
+* CI/CD In Kubernetes
+  * Build with Tekton / CloudNative BuildPacks
+  * generate SBOM
+  * Testcontainers?
+  * combine steps with Cartographer?
+* Clients in multiple languages?
+  * Java
+  * Rust
+* Host server in Google Cloud Run
+
 ## Testing Kubernetes
 
 ### HTTP

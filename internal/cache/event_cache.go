@@ -99,7 +99,7 @@ func Event(targetRepositoryID string, event *api.WebhookEvent) error {
 	return nil
 }
 
-func InternalEvent(targetRepositoryID string, eventBodyBytes []byte, headers http.Header) error {
+func InternalEvent(targetRepositoryID string, eventBodyBytes []byte, headers http.Header) (bool, error) {
 	deliveryId := headers.Get(DeliveryIdHeader)
 
 	webhookEventHeaders := make([]api.WebhookEventHeader, len(headers))
@@ -120,6 +120,5 @@ func InternalEvent(targetRepositoryID string, eventBodyBytes []byte, headers htt
 		EventBody: eventBody,
 	}
 
-	Store.Store(targetRepositoryID, webhookEvent)
-	return nil
+	return Store.Store(targetRepositoryID, webhookEvent), nil
 }

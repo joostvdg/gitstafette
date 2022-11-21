@@ -49,6 +49,14 @@ client-1:
 client-2:
 	go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 --relayEndpoint http://localhost:1324/v1/github/
 
+.PHONY: client-cluster-send
+client-cluster-send:
+	go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 --relayEndpoint http://lemon.fritz.box/api/v1/github/
+
+.PHONY: client-cluster-receive
+client-cluster-receive:
+	go run cmd/client/main.go --repo 537845873 --server "lemon.fritz.box" --port 80
+
 go-build-server:
 	CGO_ENABLED=0 go build -o bin/$(NAME) cmd/server/main.go
 

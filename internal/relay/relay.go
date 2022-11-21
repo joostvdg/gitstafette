@@ -27,16 +27,17 @@ type Status struct {
 // InitiateRelayOrDie parses the relayEndpoint as URL or dies (fatal).
 // If it is a valid URL, it starts the health check service and relay service to this URL.
 func InitiateRelayOrDie(relayEndpoint string, serviceContext *gcontext.ServiceContext) *url.URL {
+	if relayEndpoint == "" {
+		log.Println("RelayEndpoint is empty, disabling relay push")
+		return nil
+	}
 	relayEndpointURL, err := url.Parse(relayEndpoint)
 	if err != nil {
 		log.Fatal("Malformed URL: ", err.Error())
 	}
-	if relayEndpoint == "" {
-		log.Println("RelayEndpoint is empty, disabling relay push")
-	} else {
-		go RelayHealthCheck(serviceContext)
-		go RelayCachedEvents(serviceContext)
-	}
+	serviceContext.RelayEndpoint = relayEndpointURL
+	go RelayHealthCheck(serviceContext)
+	go RelayCachedEvents(serviceContext)
 	return relayEndpointURL
 }
 
@@ -112,12 +113,13 @@ func RelayHealthCheck(serviceContext *context.ServiceContext) {
 		TimeOfLastCheck:             time.Now(),
 	}
 	ctx := serviceContext.Context
-	clock := time.NewTicker(30 * time.Second)
+	clock := time.NewTicker(5 * time.Second)
 	for {
 		select {
 		case <-clock.C:
 			// TODO do healthcheck
 			repoIds := cache.Repositories.Repositories
+			log.Printf("We have %v repositories (%v)", len(repoIds), repoIds)
 			status.TimeOfLastCheck = time.Now()
 			healthy, err := doHealthCheck(serviceContext.RelayEndpoint, repoIds[0])
 

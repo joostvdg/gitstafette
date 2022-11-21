@@ -3,9 +3,11 @@ package cache
 import (
 	api "github.com/joostvdg/gitstafette/api/v1"
 	"log"
+	"sync"
 )
 
 type inMemoryStore struct {
+	mu     sync.RWMutex
 	events map[string][]*api.WebhookEventInternal
 }
 
@@ -17,10 +19,21 @@ func NewInMemoryStore() *inMemoryStore {
 
 // TODO need a lock of some sort
 func (i *inMemoryStore) Store(repositoryId string, event *api.WebhookEventInternal) bool {
+	log.Printf("Claiming lock")
+	i.mu.Lock()
+	defer i.mu.Unlock()
 	events := i.events[repositoryId]
 	if events == nil {
 		events = make([]*api.WebhookEventInternal, 0)
 	}
+	for _, storedEvent := range events {
+		if storedEvent.ID == event.ID {
+			log.Printf("Already stored this event, skipping. (repo: %v, event: %v)",
+				repositoryId, event.ID)
+			return false
+		}
+	}
+
 	events = append(events, event)
 	i.events[repositoryId] = events
 	log.Printf("Cached event for repository %v, currently holding %d events for the repository",

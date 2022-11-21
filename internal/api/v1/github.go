@@ -29,11 +29,17 @@ func HandleGitHubPost(ctx echo.Context) error {
 	}
 
 	targetRepositoryID := headers[TargetIdHeader][0]
+	isStored := false
 	if cache.Repositories.RepositoryIsWatched(targetRepositoryID) {
-		cache.InternalEvent(targetRepositoryID, messagePayload, headers)
+		// TODO handle error
+		isStored, _ = cache.InternalEvent(targetRepositoryID, messagePayload, headers)
 	} else {
 		fmt.Printf("Target %v is not a watched repository", targetRepositoryID)
 		return ctx.String(http.StatusNotAcceptable, "InternalEvent does not contain a watched repository")
 	}
-	return ctx.String(http.StatusOK, "Repository event cached")
+	if isStored {
+		return ctx.String(http.StatusCreated, "Repository event cached")
+	}
+	return ctx.String(http.StatusNoContent, "Repository event accepted but is already cached")
+
 }

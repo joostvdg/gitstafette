@@ -5,30 +5,37 @@ Git Webhook Relay demo app
 ## TODO
 
 * Helm support
-  * Helm chart for Server
   * Helm chart for Client
   * improve health checks
   * define sensible resources
 * Carvel package
   * personal carvel package repository
   * on GHCR
+  * Client
+  * Server
+* Add Sentry support for server
+  * should we add Client as well?
+* Host server in Google Cloud Run
+* Support Webhook with secret/token
+* Mutual TLS with self-signed certs / Custom CA
+* OpenTelemetry metrics
+* OpenTracing metrics
+* Expose State with GraphQL
+  * with authentication
+* CI/CD In Kubernetes
+  * Build with Tekton / CloudNative BuildPacks
+  * generate SBOM/SPDX
+  * Scan with Snyk?
+  * Testcontainers?
+  * combine steps with Cartographer?
 * Kubernetes Controller + CR for generating clients
   * Metacontroller?
   * Operator?
   * (GRPC) Server should support multiple clients
   * add CR to cluster for individual Repo's, then spawn a client
-* Mutual TLS with self-signed certs / Custom CA
-* OpenTelemetry metrics
-* OpenTracing metrics
-* CI/CD In Kubernetes
-  * Build with Tekton / CloudNative BuildPacks
-  * generate SBOM
-  * Testcontainers?
-  * combine steps with Cartographer?
 * Clients in multiple languages?
   * Java
   * Rust
-* Host server in Google Cloud Run
 
 ## Testing Kubernetes
 
@@ -67,3 +74,13 @@ grpc-health-probe -addr=localhost:7777
 * https://stackoverflow.com/questions/59352845/how-to-implement-go-grpc-go-health-check
 * https://github.com/grpc-ecosystem/grpc-health-probe
 * https://github.com/grpc/grpc/blob/master/doc/health-checking.md
+
+## Testing Webhooks Locally
+
+```shell
+http POST http://localhost:1323/v1/github/ \
+  X-Github-Delivery:d4049330-377e-11ed-9c2e-1ae286aab35f \
+  X-Github-Hook-Installation-Target-Id:537845873 \
+  X-Github-Hook-Installation-Target-Type:repository \
+  Test=True
+```

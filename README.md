@@ -4,20 +4,21 @@ Git Webhook Relay demo app
 
 ## TODO
 
-* Helm support
-  * Helm chart for Client
-  * improve health checks
-  * define sensible resources
+
+* Host server in Google Cloud Run
+  * use personal domain
+  * support grpc streaming
+  * suport http + grpc streaming
 * Carvel package
   * personal carvel package repository
   * on GHCR
   * Client
   * Server
-* Add Sentry support for server
-  * should we add Client as well?
-* Host server in Google Cloud Run
 * Support Webhook with secret/token
 * Mutual TLS with self-signed certs / Custom CA
+* Helm support
+  * Helm chart for Client
+* Add Sentry support for client
 * OpenTelemetry metrics
 * OpenTracing metrics
 * Expose State with GraphQL
@@ -84,3 +85,18 @@ http POST http://localhost:1323/v1/github/ \
   X-Github-Hook-Installation-Target-Type:repository \
   Test=True
 ```
+
+## Google Cloud Run
+
+* https://cloud.google.com/run/docs/configuring/containers
+* https://cloud.google.com/run/docs/deploying#terraform
+* https://ahmet.im/blog/cloud-run-multiple-processes-easy-way/
+* https://github.com/ahmetb/multi-process-container-lazy-solution/blob/master/start.sh
+* https://cloud.google.com/blog/products/serverless/cloud-run-healthchecks
+
+### Envoy Setup
+
+We can only use ***one*** port with Cloud Run.
+But, we can use an Envoy proxy to route between the http and grpc servers.
+
+* https://gruchalski.com/posts/2022-02-20-keycloak-1700-with-tls-behind-envoy/

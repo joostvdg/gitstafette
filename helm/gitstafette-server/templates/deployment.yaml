@@ -37,17 +37,19 @@ spec:
             - "{{ .Values.repositories }}"
             - --grpcPort
             - "{{ .Values.grpcPort }}"
+            - --port
+            - "{{ .Values.httpPort }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: 1323
+              containerPort: {{ .Values.httpPort }}
               protocol: TCP
             - name: grpc
               containerPort: {{ .Values.grpcPort }}
               protocol: TCP
           livenessProbe:
             httpGet:
-              path: /
+              path: "{{ .Values.httpPrefix }}"
               port: http
           startupProbe:
             grpc:
@@ -55,7 +57,7 @@ spec:
             initialDelaySeconds: 5
           readinessProbe:
             httpGet:
-              path: /
+              path: "{{ .Values.httpPrefix }}"
               port: http
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

@@ -20,7 +20,6 @@ import (
 // TODO use Redis for caching if we can
 // TODO so, we get an interface -> InMemory and Redis impls?
 
-const DeliveryIdHeader = "X-Github-Delivery"
 const delimiter = ","
 
 var Store EventStore
@@ -33,7 +32,7 @@ type EventStore interface {
 	IsConnected() bool
 }
 
-func InitCache(repositoryIDs string, redisConfig *RedisConfig) {
+func InitCache(repositoryIDs string, redisConfig *RedisConfig) []string {
 	if repositoryIDs == "" || len(repositoryIDs) <= 1 {
 		log.Fatal("Did not receive any RepositoryID to watch")
 	}
@@ -50,6 +49,7 @@ func InitCache(repositoryIDs string, redisConfig *RedisConfig) {
 		Repositories.AddRepository(repoId)
 	}
 	Store = initializeStore(redisConfig)
+	return repoIds
 }
 
 func initializeStore(config *RedisConfig) EventStore {
@@ -72,35 +72,13 @@ func PrepareForShutdown() {
 }
 
 func Event(targetRepositoryID string, event *api.WebhookEvent) error {
-	webhookEventHeaders := make([]api.WebhookEventHeader, len(event.Headers))
-	deliveryId := ""
-	for _, header := range event.Headers {
-		key := header.Name
-		value := header.Values
-		webhookEventHeader := api.WebhookEventHeader{
-			Key:        key,
-			FirstValue: value,
-		}
-		if key == DeliveryIdHeader {
-			deliveryId = value
-		}
-		webhookEventHeaders = append(webhookEventHeaders, webhookEventHeader)
-	}
-
-	eventBody := bytes.NewBuffer(event.Body).String()
-	webhookEvent := &api.WebhookEventInternal{
-		ID:        deliveryId,
-		IsRelayed: false,
-		Timestamp: time.Now(),
-		Headers:   webhookEventHeaders,
-		EventBody: eventBody,
-	}
+	webhookEvent := api.ExternalToInternalEvent(event)
 	Store.Store(targetRepositoryID, webhookEvent)
 	return nil
 }
 
 func InternalEvent(targetRepositoryID string, eventBodyBytes []byte, headers http.Header) (bool, error) {
-	deliveryId := headers.Get(DeliveryIdHeader)
+	deliveryId := headers.Get(api.DeliveryIdHeader)
 
 	webhookEventHeaders := make([]api.WebhookEventHeader, len(headers))
 	for key, value := range headers {

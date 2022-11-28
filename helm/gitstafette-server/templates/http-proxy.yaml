@@ -24,7 +24,7 @@ spec:
         - prefix: {{ .Values.httpproxy.http.prefix }}
       services:
         - name: {{ include "gitstafette-server.fullname" . }}
-          port: {{ .Values.service.port }}
+          port: {{ .Values.httpPort }}
       pathRewritePolicy:
         replacePrefix:
           - replacement: {{ .Values.httpproxy.http.replacement }}

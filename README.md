@@ -4,11 +4,15 @@ Git Webhook Relay demo app
 
 ## TODO
 
-
+* Server includes direct relay option
+  * do not cache
+  * push message to other server via GRPC
+  * HTTP server receives http webhooks, sends to GRPC server with grpc client
+  * GRPC server receives/sends via GRPC only, _does_ cache
 * Host server in Google Cloud Run
   * use personal domain
   * support grpc streaming
-  * suport http + grpc streaming
+  * support http + grpc streaming
 * Carvel package
   * personal carvel package repository
   * on GHCR

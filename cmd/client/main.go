@@ -24,15 +24,23 @@ func main() {
 	serverPort := flag.String("port", "50051", "Port used for connecting to the GRPC Server")
 	serverAddress := flag.String("server", "127.0.0.1", "Server address to connect to")
 	repositoryId := flag.String("repo", "", "GitHub Repository ID to receive webhook events for")
-	relayEndpoint := flag.String("relayEndpoint", "", "URL of the Relay Endpoint to deliver the captured events to")
+	relayEnabled := flag.Bool("relayEnabled", false, "If the server should relay received events, rather than caching them for clients")
+	relayHost := flag.String("relayHost", "127.0.0.1", "Host address to relay events to")
+	relayPort := flag.String("relayPort", "50051", "The port of the relay address")
+	relayProtocol := flag.String("relayProtocol", "grpc", "The protocol for the relay address (grpc, or http)")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPort, *relayProtocol)
+	if err != nil {
+		log.Fatal("Malformed URL: ", err.Error())
+	}
 	serviceContext := &gcontext.ServiceContext{
 		Context: ctx,
+		Relay:   relayConfig,
 	}
-	relay.InitiateRelayOrDie(*relayEndpoint, serviceContext)
+	relay.InitiateRelay(serviceContext, *repositoryId)
 	cache.InitCache(*repositoryId, nil)
 
 	stream := initializeWebhookEventStreamOrDie(*repositoryId, *serverAddress, *serverPort, ctx)

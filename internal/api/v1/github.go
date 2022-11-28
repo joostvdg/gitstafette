@@ -2,10 +2,13 @@ package v1
 
 import (
 	"fmt"
+	"github.com/getsentry/sentry-go"
+	sentryecho "github.com/getsentry/sentry-go/echo"
 	"github.com/joostvdg/gitstafette/internal/cache"
 	"github.com/labstack/echo/v4"
 	"io/ioutil"
 	"net/http"
+	"time"
 )
 
 const (
@@ -34,8 +37,18 @@ func HandleGitHubPost(ctx echo.Context) error {
 		// TODO handle error
 		isStored, _ = cache.InternalEvent(targetRepositoryID, messagePayload, headers)
 	} else {
-		fmt.Printf("Target %v is not a watched repository", targetRepositoryID)
-		return ctx.String(http.StatusNotAcceptable, "InternalEvent does not contain a watched repository")
+		message := fmt.Sprintf("Target %v is not a watched repository", targetRepositoryID)
+		fmt.Printf(message)
+		if hub := sentryecho.GetHubFromContext(ctx); hub != nil {
+			hub.WithScope(func(scope *sentry.Scope) {
+				scope.SetExtra("targetRepositoryID", targetRepositoryID)
+				scope.SetExtra("targetType", targetType)
+				scope.SetExtra("RequestURI", ctx.Request().RequestURI)
+				hub.CaptureMessage(message)
+				hub.Flush(time.Second * 5)
+			})
+		}
+		return ctx.String(http.StatusNotAcceptable, message)
 	}
 	if isStored {
 		return ctx.String(http.StatusCreated, "Repository event cached")

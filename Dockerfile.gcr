@@ -8,12 +8,17 @@ RUN go mod download
 COPY . .
 RUN make go-build-server
 
-FROM debian:buster-slim
+FROM nginx:1.23.2-alpine
 EXPOSE 1323
 EXPOSE 50051
 ENV PORT=8080
-RUN set -x && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
-ENTRYPOINT ["/usr/bin/gitstafette"]
+ENV TINI_VERSION v0.18.0
+ENTRYPOINT ["/tini", "--", "./server-entrypoint.sh"]
+ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-static /tini
+RUN chmod +x /tini
+RUN apk --no-cache add ca-certificates bash
+COPY server-entrypoint.sh .
+COPY nginx.conf .
 COPY --from=builder /go/src/gitstafette/bin/gitstafette /usr/bin/gitstafette
+
+

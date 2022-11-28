@@ -4,16 +4,18 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/getsentry/sentry-go"
+	sentryecho "github.com/getsentry/sentry-go/echo"
 	internal_api "github.com/joostvdg/gitstafette/internal/api/v1"
 	"github.com/joostvdg/gitstafette/internal/cache"
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
 	"github.com/joostvdg/gitstafette/internal/relay"
+	"github.com/labstack/echo/v4/middleware"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -25,22 +27,27 @@ import (
 
 // TODO add flags for target for Relay
 
+const (
+	envSentry = "SENTRY_DSN"
+)
+
 type server struct {
 	api.UnimplementedGitstafetteServer
 }
 
 func main() {
-	port := flag.String("port", "1323", "Port used for hosting the server")
+	portFlag := flag.String("port", "1323", "Port used for hosting the server")
 	grpcPort := flag.String("grpcPort", "50051", "Port used for hosting the grpc server")
 	repositoryIDs := flag.String("repositories", "", "Comma separated list of GitHub repository IDs to listen for")
-	relayEndpoint := flag.String("relayEndpoint", "", "URL of the Relay Endpoint to deliver the captured events to")
 	redisDatabase := flag.String("redisDatabase", "0", "Database used for redis")
 	redisHost := flag.String("redisHost", "localhost", "Host of the Redis server")
 	redisPort := flag.String("redisPort", "6379", "Port of the Redis server")
 	redisPassword := flag.String("redisPassword", "", "Password of the Redis server (default is no password")
+	relayEnabled := flag.Bool("relayEnabled", false, "If the server should relay received events, rather than caching them for clients")
+	relayHost := flag.String("relayHost", "127.0.0.1", "Host address to relay events to")
+	relayPort := flag.String("relayPort", "50051", "The port of the relay address")
+	relayProtocol := flag.String("relayProtocol", "grpc", "The protocol for the relay address (grpc, or http)")
 	flag.Parse()
-
-	log.Printf("Starting server, http port: %s, grpc port: %s\n", *port, *grpcPort)
 
 	redisConfig := &cache.RedisConfig{
 		Host:     *redisHost,
@@ -48,20 +55,31 @@ func main() {
 		Password: *redisPassword,
 		Database: *redisDatabase,
 	}
-	cache.InitCache(*repositoryIDs, redisConfig)
+	repoIds := cache.InitCache(*repositoryIDs, redisConfig)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	serviceContext := &gcontext.ServiceContext{
-		Context: ctx,
+	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPort, *relayProtocol)
+	if err != nil {
+		log.Fatal("Malformed URL: ", err.Error())
 	}
 
-	var relayEndpointURL *url.URL
-	if *relayEndpoint == "" {
-		relayEndpointURL = relay.InitiateRelayOrDie(*relayEndpoint, serviceContext)
+	serviceContext := &gcontext.ServiceContext{
+		Context: ctx,
+		Relay:   relayConfig,
 	}
+
+	if relayConfig.Enabled {
+		for _, repoId := range repoIds {
+			// TODO confirm this works for 1 and multiple
+			relay.InitiateRelay(serviceContext, repoId)
+		}
+	}
+	initSentry() // has to happen before we init Echo
 	grpcServer := initializeGRPCServer(*grpcPort)
-	echoServer := initializeEchoServer(relayEndpointURL, *port)
+	port := determineHttpPort(*portFlag)
+	echoServer := initializeEchoServer(relayConfig, port)
+	log.Printf("Started http server on: %s, and grpc server on: %s\n", port, *grpcPort)
 
 	// Wait for interrupt signal to gracefully shut down the server with a timeout of 10 seconds.
 	// Use a buffered channel to avoid missing signals as recommended for signal.Notify
@@ -80,17 +98,47 @@ func main() {
 	log.Printf("Shutting down!\n")
 }
 
-func initializeEchoServer(relayEndpointURL *url.URL, port string) *echo.Echo {
+func determineHttpPort(portOverride string) string {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = portOverride
+		log.Printf("defaulting to port %s", port)
+	}
+	return port
+}
+
+func initSentry() {
+	// To initialize Sentry's handler, you need to initialize Sentry itself beforehand
+	sentryDsn, sentryOk := os.LookupEnv(envSentry)
+	if sentryOk {
+		err := sentry.Init(sentry.ClientOptions{
+			Dsn:              sentryDsn,
+			TracesSampleRate: 1.0,
+		})
+
+		if err != nil {
+			log.Printf("Sentry initialization failed: %v\n", err)
+		} else {
+			log.Print("Initialized Sentry")
+		}
+	}
+}
+
+func initializeEchoServer(relayConfig *api.RelayConfig, port string) *echo.Echo {
 	e := echo.New()
 	e.Use(func(e echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			gitstatefetteContext := &gcontext.GitstafetteContext{
-				Context:       c,
-				RelayEndpoint: relayEndpointURL,
+				Context: c,
+				Relay:   relayConfig,
 			}
 			return e(gitstatefetteContext)
 		}
 	})
+
+	e.Use(middleware.Logger())
+	e.Use(middleware.Recover())
+	e.Use(sentryecho.New(sentryecho.Options{}))
 
 	e.GET("/", func(c echo.Context) error {
 		return c.String(http.StatusOK, "Hello, World!")
@@ -124,6 +172,20 @@ func initializeGRPCServer(grpcPort string) *grpc.Server {
 		log.Println("Shutdown GRPC server")
 	}(grpcServer)
 	return grpcServer
+}
+
+func (s server) WebhookEventPush(ignoredContext context.Context, request *api.WebhookEventPushRequest) (*api.WebhookEventPushResponse, error) {
+	response := &api.WebhookEventPushResponse{
+		ResponseCode:        "200", // TODO implement a response code system
+		ResponseDescription: "depends",
+		Accepted:            false,
+	}
+
+	err := cache.Event(request.RepositoryId, request.WebhookEvent)
+	if err == nil {
+		response.Accepted = true
+	}
+	return response, err
 }
 
 func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gitstafette_FetchWebhookEventsServer) error {
@@ -175,21 +237,7 @@ func retrieveCachedEventsForRepository(repositoryId string) ([]*api.WebhookEvent
 		if cachedEvent.IsRelayed {
 			continue
 		}
-
-		headers := make([]*api.Header, len(cachedEvent.Headers))
-		for _, header := range cachedEvent.Headers {
-			header := &api.Header{
-				Name:   header.Key,
-				Values: header.FirstValue,
-			}
-			headers = append(headers, header)
-		}
-
-		event := &api.WebhookEvent{
-			EventId: cachedEvent.ID,
-			Body:    []byte(cachedEvent.EventBody),
-			Headers: headers,
-		}
+		event := api.InternalToExternalEvent(cachedEvent)
 		events = append(events, event)
 	}
 	return events, nil

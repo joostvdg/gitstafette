@@ -3,6 +3,7 @@ package cache
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"github.com/go-redis/redis"
 	api "github.com/joostvdg/gitstafette/api/v1"
 	"log"
@@ -54,14 +55,18 @@ func (r *redisStore) IsConnected() bool {
 func (r *redisStore) Store(repositoryId string, event *api.WebhookEventInternal) bool {
 	jsonRepresentation, err := json.Marshal(event)
 	if err != nil {
-		log.Printf("Could not parse event")
+		errorMessage := fmt.Sprintf("Could not parse event: %v", err)
+		log.Print(errorMessage)
+		sentry.CaptureMessage(errorMessage)
 		return false
 	}
 
 	response := r.redisClient.LPush(repositoryId, string(jsonRepresentation))
 	numAffected, err := response.Result()
 	if err != nil || numAffected <= 0 {
-		log.Printf("Could not store event in RedisStore for Repo %v: %v", repositoryId, err)
+		errorMessage := fmt.Sprintf("Could not store event in RedisStore for Repo %v: %v", repositoryId, err)
+		log.Print(errorMessage)
+		sentry.CaptureMessage(errorMessage)
 		return false
 	}
 	return true
@@ -96,32 +101,3 @@ func (r *redisStore) CountEventsForRepository(repositoryId string) int {
 	}
 	return int(numberOfItems)
 }
-
-//func redisAddRepository(repo api.Repository) {
-//	webhookEventHeaders := make([]api.WebhookEventHeader, 2)
-//	webhookEventHeader1 := api.WebhookEventHeader{
-//		Key:        "ABC",
-//		FirstValue: "XYZ",
-//	}
-//	webhookEventHeader2 := api.WebhookEventHeader{
-//		Key:        "DEF",
-//		FirstValue: "XYZ",
-//	}
-//	webhookEventHeaders = append(webhookEventHeaders, webhookEventHeader1)
-//	webhookEventHeaders = append(webhookEventHeaders, webhookEventHeader2)
-//	testData := api.WebhookEventInternal{
-//		ID:        "0",
-//		IsRelayed: false,
-//		Timestamp: time.Now(),
-//		Headers:   webhookEventHeaders,
-//		EventBody: "{}",
-//	}
-//	jsonRepresentation, err := json.Marshal(testData)
-//
-//	if err != nil {
-//		log.Printf("Ran into an error parsing webhook event: %v\n", err)
-//	} else {
-//		redisClient.SAdd(repo.ID, string(jsonRepresentation))
-//		//redisClient.Set(repo.ID, string(jsonRepresentation), time.Minute*10)
-//	}
-//}

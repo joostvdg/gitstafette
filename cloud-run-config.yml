@@ -1,0 +1,69 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: gitstafette-server
+  namespace: '835288527708'
+  selfLink: /apis/serving.knative.dev/v1/namespaces/835288527708/services/gitstafette-server
+  uid: bfbd6f16-38b6-4c15-a677-a86aa84f9eef
+  resourceVersion: AAXuKvC6cIU
+  generation: 2
+  creationTimestamp: '2022-11-22T23:17:12.082911Z'
+  labels:
+    cloud.googleapis.com/location: europe-west4
+  annotations:
+    run.googleapis.com/client-name: gcloud
+    serving.knative.dev/creator: joostvdg@gmail.com
+    serving.knative.dev/lastModifier: joostvdg@gmail.com
+    client.knative.dev/user-image: gcr.io/kearos-gcp/gitstafette-server:0.1.0-a45667a
+    run.googleapis.com/client-version: 405.0.1
+    run.googleapis.com/ingress: all
+    run.googleapis.com/ingress-status: all
+spec:
+  template:
+    metadata:
+      name: gitstafette-server-00002-pif
+      annotations:
+        run.googleapis.com/client-name: gcloud
+        client.knative.dev/user-image: gcr.io/kearos-gcp/gitstafette-server:0.1.0-a45667a
+        run.googleapis.com/client-version: 405.0.1
+        autoscaling.knative.dev/maxScale: '2'
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 30
+      serviceAccountName: 835288527708-compute@developer.gserviceaccount.com
+      containers:
+        - image: gcr.io/kearos-gcp/gitstafette-server:0.1.0-a45667a
+          args:
+            - --repositories
+            - '537845873'
+          ports:
+            - name: http1
+              containerPort: 8080
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 128Mi
+  traffic:
+    - percent: 100
+      latestRevision: true
+status:
+  observedGeneration: 2
+  conditions:
+    - type: Ready
+      status: 'True'
+      lastTransitionTime: '2022-11-23T22:37:58.221521Z'
+    - type: ConfigurationsReady
+      status: 'True'
+      lastTransitionTime: '2022-11-23T22:37:51.908808Z'
+    - type: RoutesReady
+      status: 'True'
+      lastTransitionTime: '2022-11-23T22:37:58.340741Z'
+  latestReadyRevisionName: gitstafette-server-00002-pif
+  latestCreatedRevisionName: gitstafette-server-00002-pif
+  traffic:
+    - revisionName: gitstafette-server-00002-pif
+      percent: 100
+      latestRevision: true
+  url: https://gitstafette-server-qad46fd4qq-ez.a.run.app
+  address:
+    url: https://gitstafette-server-qad46fd4qq-ez.a.run.app

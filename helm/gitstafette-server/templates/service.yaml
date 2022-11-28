@@ -10,11 +10,12 @@ spec:
   type: {{ .Values.service.type }}
   ports:
     - name: http
-      port: {{ .Values.service.port }}
+      port: {{ .Values.httpPort }}
       targetPort: http
       protocol: TCP
     - name: grpc
       port: {{ .Values.grpcPort }}
       targetPort: {{ .Values.grpcPort }}
+      protocol: TCP
   selector:
     {{- include "gitstafette-server.selectorLabels" . | nindent 4 }}

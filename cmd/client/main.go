@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	api "github.com/joostvdg/gitstafette/api/v1"
@@ -9,7 +11,7 @@ import (
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
 	"github.com/joostvdg/gitstafette/internal/relay"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
 	"io"
 	"log"
 	"os"
@@ -81,10 +83,23 @@ func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, r
 	<-serverClosed
 }
 
-func initializeWebhookEventStreamOrDie(repositoryId string, serverAddress string, serverPort string, ctx context.Context) api.Gitstafette_FetchWebhookEventsClient {
-	server := fmt.Sprintf("%s:%s", serverAddress, serverPort)
-	insecureCredentials := insecure.NewCredentials()
-	conn, err := grpc.Dial(server, grpc.WithTransportCredentials(insecureCredentials))
+func initializeWebhookEventStreamOrDie(repositoryId string, serverHost string, serverPort string, ctx context.Context) api.Gitstafette_FetchWebhookEventsClient {
+	var opts []grpc.DialOption
+	opts = append(opts, grpc.WithAuthority(serverHost))
+
+	systemRoots, err := x509.SystemCertPool()
+	if err != nil {
+		log.Printf("cannot load root CA certs: %v", err)
+	}
+	creds := credentials.NewTLS(&tls.Config{
+		RootCAs: systemRoots,
+	})
+	opts = append(opts, grpc.WithTransportCredentials(creds))
+
+	// https://www.googlecloudcommunity.com/gc/Serverless/Unable-to-connect-to-Cloud-Run-gRPC-server/m-p/422280/highlight/true#M345
+	//opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	server := fmt.Sprintf("%s:%s", serverHost, serverPort)
+	conn, err := grpc.Dial(server, opts...)
 
 	if err != nil {
 		log.Fatalf("cannot connect to the server %s: %v\n", server, err)
@@ -99,7 +114,7 @@ func initializeWebhookEventStreamOrDie(repositoryId string, serverAddress string
 
 	stream, err := client.FetchWebhookEvents(ctx, request)
 	if err != nil {
-		log.Fatalf("could not open stream: %v\n", err)
+		log.Fatalf("could not open stream to %s: %v\n", server, err)
 	}
 	return stream
 }

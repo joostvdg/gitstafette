@@ -1,12 +1,14 @@
 package relay
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"github.com/go-resty/resty/v2"
 	v1 "github.com/joostvdg/gitstafette/api/v1"
 	"github.com/joostvdg/gitstafette/internal/cache"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
 	"context"
@@ -35,9 +37,9 @@ func InitiateRelay(serviceContext *gcontext.ServiceContext, repositoryId string)
 	if relayConfig.Enabled {
 		go RelayHealthCheck(serviceContext)
 		go RelayCachedEvents(serviceContext, repositoryId)
+	} else {
+		log.Println("Relay is disabled")
 	}
-	log.Println("Relay is disabled")
-
 }
 
 // TODO API should have a function To/From internal/external rep
@@ -99,10 +101,20 @@ func RelayCachedEvents(serviceContext *gcontext.ServiceContext, repositoryId str
 }
 
 func GRPCRelay(internalEvent *v1.WebhookEventInternal, relay *v1.RelayConfig, repositoryId string) {
+	systemRoots, err := x509.SystemCertPool()
+	if err != nil {
+		log.Printf("cannot load root CA certs: %v", err)
+	}
+	creds := credentials.NewTLS(&tls.Config{
+		RootCAs: systemRoots,
+	})
+	var opts []grpc.DialOption
+	opts = append(opts, grpc.WithAuthority(relay.Host))
+	opts = append(opts, grpc.WithTransportCredentials(creds))
+
 	server := fmt.Sprintf("%s:%s", relay.Host, relay.Port)
 	log.Printf("GRPCRelay to server: %s\n", server)
-	insecureCredentials := insecure.NewCredentials()
-	conn, err := grpc.Dial(server, grpc.WithTransportCredentials(insecureCredentials))
+	conn, err := grpc.Dial(server, opts...)
 
 	if err != nil {
 		log.Fatalf("cannot connect to the server %s: %v\n", server, err)
@@ -205,11 +217,23 @@ func doGrpcHealthcheck(serviceContext *gcontext.ServiceContext) (bool, error) {
 	//flRPCTimeout := time.Second * 5
 	//rpcCtx, rpcCancel := context.WithTimeout(ctx, flRPCTimeout)
 	//defer rpcCancel()
-	relayConfig := serviceContext.Relay
-	server := fmt.Sprintf("%s:%s", relayConfig.Host, relayConfig.Port)
-	insecureCredentials := insecure.NewCredentials()
-	conn, err := grpc.Dial(server, grpc.WithTransportCredentials(insecureCredentials))
 
+	systemRoots, err := x509.SystemCertPool()
+	if err != nil {
+		log.Printf("cannot load root CA certs: %v", err)
+	}
+	creds := credentials.NewTLS(&tls.Config{
+		RootCAs: systemRoots,
+	})
+
+	relayConfig := serviceContext.Relay
+	var opts []grpc.DialOption
+	opts = append(opts, grpc.WithTransportCredentials(creds))
+	opts = append(opts, grpc.WithAuthority(relayConfig.Host))
+
+	// https://www.googlecloudcommunity.com/gc/Serverless/Unable-to-connect-to-Cloud-Run-gRPC-server/m-p/422280/highlight/true#M345
+	server := fmt.Sprintf("%s:%s", relayConfig.Host, relayConfig.Port)
+	conn, err := grpc.Dial(server, opts...)
 	if err != nil {
 		log.Fatalf("cannot connect to the server %s: %v\n", server, err)
 	}

@@ -36,7 +36,7 @@ type server struct {
 }
 
 func main() {
-	portFlag := flag.String("port", "1323", "Port used for hosting the server")
+	port := flag.String("port", "1323", "Port used for hosting the server")
 	grpcPort := flag.String("grpcPort", "50051", "Port used for hosting the grpc server")
 	repositoryIDs := flag.String("repositories", "", "Comma separated list of GitHub repository IDs to listen for")
 	redisDatabase := flag.String("redisDatabase", "0", "Database used for redis")
@@ -70,6 +70,7 @@ func main() {
 	}
 
 	if relayConfig.Enabled {
+		log.Printf("Relay mode enabled: %v", relayConfig)
 		for _, repoId := range repoIds {
 			// TODO confirm this works for 1 and multiple
 			relay.InitiateRelay(serviceContext, repoId)
@@ -77,9 +78,8 @@ func main() {
 	}
 	initSentry() // has to happen before we init Echo
 	grpcServer := initializeGRPCServer(*grpcPort)
-	port := determineHttpPort(*portFlag)
-	echoServer := initializeEchoServer(relayConfig, port)
-	log.Printf("Started http server on: %s, and grpc server on: %s\n", port, *grpcPort)
+	echoServer := initializeEchoServer(relayConfig, *port)
+	log.Printf("Started http server on: %s, and grpc server on: %s\n", *port, *grpcPort)
 
 	// Wait for interrupt signal to gracefully shut down the server with a timeout of 10 seconds.
 	// Use a buffered channel to avoid missing signals as recommended for signal.Notify
@@ -96,15 +96,6 @@ func main() {
 	grpcServer.GracefulStop()
 	cache.PrepareForShutdown()
 	log.Printf("Shutting down!\n")
-}
-
-func determineHttpPort(portOverride string) string {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = portOverride
-		log.Printf("defaulting to port %s", port)
-	}
-	return port
 }
 
 func initSentry() {
@@ -164,7 +155,7 @@ func initializeGRPCServer(grpcPort string) *grpc.Server {
 			log.Fatalf("failed to listen: %v", err)
 		}
 
-		grpc_health_v1.RegisterHealthServer(grpcServer, &HealthCheckService{})
+		grpc_health_v1.RegisterHealthServer(s, &HealthCheckService{})
 		api.RegisterGitstafetteServer(s, server{})
 		if err := s.Serve(grpcListener); err != nil {
 			log.Fatalf("failed to serve: %v", err)

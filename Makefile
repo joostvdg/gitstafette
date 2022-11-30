@@ -1,7 +1,6 @@
 CONFIG_PATH=${HOME}/.gitstafette/
 LOCAL_VERSION = $(shell git describe --tags --always)
 PACKAGE_VERSION ?= "0.1.0-$(LOCAL_VERSION)"
-PACKAGE_VERSION_GCR ?= "$(PACKAGE_VERSION)-gcr"
 NAME := gitstafette
 PROJECT_ID := kearos-gcp
 MAIN_GO :=
@@ -68,11 +67,11 @@ client-2:
 
 .PHONY: client-3
 client-3:
-	go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 --relayEndpoint http://localhost:1324/v1/github/
+	go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" -port- 50051 --relayEndpoint http://localhost:1324/v1/github/
 
 .PHONY: client-cluster-send
 client-cluster-send:
-	go run cmd/client/main.go --repo 537845873 --server gitstafette-server-qad46fd4qq-ez.a.run.app --port 80
+	go run cmd/client/main.go --repo 537845873 --server gitstafette-server-qad46fd4qq-ez.a.run.app --port 443
 
 .PHONY: client-cluster-receive
 client-cluster-receive:
@@ -90,24 +89,38 @@ dxbuild-server:
 dxpush-server:
 	docker buildx build . --platform linux/arm64,linux/amd64 --tag caladreas/gitstafette-server:${PACKAGE_VERSION} --push
 
-
-
 dxbuild-client:
 	docker buildx build . --platform linux/arm64,linux/amd64 --tag caladreas/gitstafette-server:${PACKAGE_VERSION}
 
 dxpush-client:
 	docker buildx build . --platform linux/arm64,linux/amd64 --tag caladreas/gitstafette-server:${PACKAGE_VERSION} --push
 
-dxpush-server-gcr:
-	docker buildx build . -f Dockerfile.gcr --platform linux/amd64 --tag caladreas/gitstafette-server:${PACKAGE_VERSION_GCR} --push
 
-gpush: dxpush-server-gcr
-	docker pull caladreas/gitstafette-server:${PACKAGE_VERSION_GCR}
-	docker tag caladreas/gitstafette-server:${PACKAGE_VERSION_GCR} gcr.io/${PROJECT_ID}/${NAME}-server:${PACKAGE_VERSION_GCR}
-	docker push gcr.io/${PROJECT_ID}/${NAME}-server:${PACKAGE_VERSION_GCR}
+gpush: dxpush-server
+	docker pull caladreas/gitstafette-server:${PACKAGE_VERSION}
+	docker tag caladreas/gitstafette-server:${PACKAGE_VERSION} gcr.io/${PROJECT_ID}/${NAME}-server:${PACKAGE_VERSION}
+	docker push gcr.io/${PROJECT_ID}/${NAME}-server:${PACKAGE_VERSION}
+
 
 gdeploy: gpush
-	gcloud run deploy gitstafette-server --image=gcr.io/${PROJECT_ID}/${NAME}-server:${PACKAGE_VERSION_GCR} --memory=128Mi --max-instances=2 --timeout=30 --project=$(PROJECT_ID) --platform managed --allow-unauthenticated --region=europe-west4 # --args="--repositories" --args="537845873"
+	gcloud run deploy gitstafette-server-http --image=gcr.io/${PROJECT_ID}/${NAME}-server:${PACKAGE_VERSION} \
+		--memory=128Mi --max-instances=1 --timeout=30 --project=$(PROJECT_ID)\
+		--platform managed --allow-unauthenticated --region=europe-west4 \
+		--args="--repositories" --args="537845873"\
+		--args="--port=8080"\
+      	--args="--grpcPort=50051" \
+		--args="--relayEnabled=true"\
+		--args="--relayHost=gitstafette-server-qad46fd4qq-ez.a.run.app"\
+		--args="--relayPort=443"
+
+	gcloud beta run deploy gitstafette-server \
+		--use-http2 \
+		--image=gcr.io/${PROJECT_ID}/${NAME}-server:${PACKAGE_VERSION} \
+		--memory=128Mi --max-instances=1 --timeout=30 --project=$(PROJECT_ID)\
+		--platform managed --allow-unauthenticated --region=europe-west4 \
+		--args="--repositories=537845873" \
+		--args="--port=1323"\
+      	--args="--grpcPort=8080"
 
 helm-server:
 	helm upgrade gitstafette-server --install -n gitstafette --create-namespace ./helm/gitstafette-server --values ./helm/server-values.yaml

@@ -47,6 +47,7 @@ func main() {
 	relayHost := flag.String("relayHost", "127.0.0.1", "Host address to relay events to")
 	relayPort := flag.String("relayPort", "50051", "The port of the relay address")
 	relayProtocol := flag.String("relayProtocol", "grpc", "The protocol for the relay address (grpc, or http)")
+	relayInsecure := flag.Bool("relayInsecure", false, "If the relay server should be handled insecurely")
 	flag.Parse()
 
 	redisConfig := &cache.RedisConfig{
@@ -59,7 +60,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPort, *relayProtocol)
+	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPort, *relayProtocol, *relayInsecure)
 	if err != nil {
 		log.Fatal("Malformed URL: ", err.Error())
 	}

@@ -4,32 +4,26 @@ Git Webhook Relay demo app
 
 ## TODO
 
-* Server includes direct relay option
-  * do not cache
-  * push message to other server via GRPC
-  * HTTP server receives http webhooks, sends to GRPC server with grpc client
-  * GRPC server receives/sends via GRPC only, _does_ cache
-* Host server in Google Cloud Run
-  * use personal domain
-  * support grpc streaming
-  * support http + grpc streaming
+* Helm support
+  * Helm chart for Client
 * Carvel package
   * personal carvel package repository
   * on GHCR
   * Client
   * Server
-* Support Webhook with secret/token
-* Mutual TLS with self-signed certs / Custom CA
-* Helm support
-  * Helm chart for Client
-* Add Sentry support for client
-* OpenTelemetry metrics
-* OpenTracing metrics
-* Expose State with GraphQL
-  * with authentication
 * CI/CD In Kubernetes
   * Build with Tekton / CloudNative BuildPacks
   * generate SBOM/SPDX
+* Add Sentry support for client
+* OpenTelemetry metrics
+* OpenTracing metrics
+* Support Webhook with secret/token
+* Host server in Google Cloud Run
+  * use personal domain
+* Mutual TLS with self-signed certs / Custom CA
+* Expose State with GraphQL
+  * with authentication
+* CI/CD In Kubernetes
   * Scan with Snyk?
   * Testcontainers?
   * combine steps with Cartographer?
@@ -40,7 +34,7 @@ Git Webhook Relay demo app
   * add CR to cluster for individual Repo's, then spawn a client
 * Clients in multiple languages?
   * Java
-  * Rust
+  * Rust: https://blog.ediri.io/creating-a-microservice-in-rust-using-grpc?s=31
 
 ## Testing Kubernetes
 
@@ -104,3 +98,12 @@ We can only use ***one*** port with Cloud Run.
 But, we can use an Envoy proxy to route between the http and grpc servers.
 
 * https://gruchalski.com/posts/2022-02-20-keycloak-1700-with-tls-behind-envoy/
+
+## Netshoot
+
+* https://github.com/nicolaka/netshoot
+
+
+```shell
+kubectl run tmp-shell --rm -i --tty --image nicolaka/netshoot
+```

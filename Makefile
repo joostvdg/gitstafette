@@ -75,7 +75,11 @@ client-cluster-send:
 
 .PHONY: client-cluster-receive
 client-cluster-receive:
-	go run cmd/client/main.go --repo 537845873 --server "lemon.fritz.box" --port 80
+	go run cmd/client/main.go --repo 537845873 --server "lemon.fritz.box" --port 80 --insecure
+
+.PHONY: client-gcr-receive
+client-gcr-receive:
+	go run cmd/client/main.go --repo 537845873 --server "gitstafette-server-qad46fd4qq-ez.a.run.app" --port 443
 
 go-build-server:
 	CGO_ENABLED=0 go build -o bin/$(NAME) cmd/server/main.go
@@ -90,10 +94,10 @@ dxpush-server:
 	docker buildx build . --platform linux/arm64,linux/amd64 --tag caladreas/gitstafette-server:${PACKAGE_VERSION} --push
 
 dxbuild-client:
-	docker buildx build . --platform linux/arm64,linux/amd64 --tag caladreas/gitstafette-server:${PACKAGE_VERSION}
+	docker buildx build . -f Dockerfile.client --platform linux/arm64,linux/amd64 --tag caladreas/gitstafette-client:${PACKAGE_VERSION}
 
 dxpush-client:
-	docker buildx build . --platform linux/arm64,linux/amd64 --tag caladreas/gitstafette-server:${PACKAGE_VERSION} --push
+	docker buildx build . -f Dockerfile.client --platform linux/arm64,linux/amd64 --tag caladreas/gitstafette-client:${PACKAGE_VERSION} --push
 
 
 gpush: dxpush-server
@@ -124,3 +128,9 @@ gdeploy: gpush
 
 helm-server:
 	helm upgrade gitstafette-server --install -n gitstafette --create-namespace ./helm/gitstafette-server --values ./helm/server-values.yaml
+
+helm-client-local:
+	helm upgrade gitstafette-client-local --install -n gitstafette --create-namespace ./helm/gitstafette-client --values ./helm/client-local-values.yaml
+
+helm-client-gcr:
+	helm upgrade gitstafette-client-gcr --install -n gitstafette --create-namespace ./helm/gitstafette-client --values ./helm/client-gcr-values.yaml

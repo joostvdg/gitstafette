@@ -12,8 +12,11 @@ import (
 	"github.com/joostvdg/gitstafette/internal/relay"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"io"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -23,18 +26,22 @@ import (
 // TODO do not close if we have not relayed our events yet!
 
 func main() {
-	serverPort := flag.String("port", "50051", "Port used for connecting to the GRPC Server")
-	serverAddress := flag.String("server", "127.0.0.1", "Server address to connect to")
+	// TODO retrieve only events for specific repository
+	// TODO so we need a repositories flag, like with the server
+	grpcServerPort := flag.String("port", "50051", "Port used for connecting to the GRPC Server")
+	grpcServerHost := flag.String("server", "127.0.0.1", "Server host to connect to")
+	grpcServerInsecure := flag.Bool("insecure", false, "If the grpc streaming server should be handled insecurely")
 	repositoryId := flag.String("repo", "", "GitHub Repository ID to receive webhook events for")
 	relayEnabled := flag.Bool("relayEnabled", false, "If the server should relay received events, rather than caching them for clients")
 	relayHost := flag.String("relayHost", "127.0.0.1", "Host address to relay events to")
 	relayPort := flag.String("relayPort", "50051", "The port of the relay address")
 	relayProtocol := flag.String("relayProtocol", "grpc", "The protocol for the relay address (grpc, or http)")
+	relayInsecure := flag.Bool("relayInsecure", false, "If the relay server should be handled insecurely")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPort, *relayProtocol)
+	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPort, *relayProtocol, *relayInsecure)
 	if err != nil {
 		log.Fatal("Malformed URL: ", err.Error())
 	}
@@ -45,9 +52,35 @@ func main() {
 	relay.InitiateRelay(serviceContext, *repositoryId)
 	cache.InitCache(*repositoryId, nil)
 
-	stream := initializeWebhookEventStreamOrDie(*repositoryId, *serverAddress, *serverPort, ctx)
+	grpcServerConfig := api.CreateConfig(*grpcServerHost, *grpcServerPort, *grpcServerInsecure)
+	stream := initializeWebhookEventStreamOrDie(*repositoryId, grpcServerConfig, ctx)
+
+	initHealthCheckServer(ctx)
 	handleWebhookEventStream(stream, *repositoryId, ctx)
 	log.Printf("Closing client\n")
+}
+
+func initHealthCheckServer(ctx context.Context) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", healthCheck)
+	muxServer := &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
+		BaseContext: func(l net.Listener) context.Context {
+			return ctx
+		},
+	}
+
+	go func() {
+		err := muxServer.ListenAndServe()
+		if err != nil {
+			log.Fatalf("Could not start health check service: %v", err)
+		}
+	}()
+}
+
+func healthCheck(w http.ResponseWriter, r *http.Request) {
+	io.WriteString(w, "OK\n")
 }
 
 func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, repositoryId string, ctx context.Context) {
@@ -83,22 +116,25 @@ func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, r
 	<-serverClosed
 }
 
-func initializeWebhookEventStreamOrDie(repositoryId string, serverHost string, serverPort string, ctx context.Context) api.Gitstafette_FetchWebhookEventsClient {
+func initializeWebhookEventStreamOrDie(repositoryId string, serverConfig *api.GRPCServerConfig, ctx context.Context) api.Gitstafette_FetchWebhookEventsClient {
 	var opts []grpc.DialOption
-	opts = append(opts, grpc.WithAuthority(serverHost))
+	opts = append(opts, grpc.WithAuthority(serverConfig.Host))
 
-	systemRoots, err := x509.SystemCertPool()
-	if err != nil {
-		log.Printf("cannot load root CA certs: %v", err)
+	if serverConfig.Insecure {
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	} else {
+		// https://www.googlecloudcommunity.com/gc/Serverless/Unable-to-connect-to-Cloud-Run-gRPC-server/m-p/422280/highlight/true#M345
+		systemRoots, err := x509.SystemCertPool()
+		if err != nil {
+			log.Printf("cannot load root CA certs: %v", err)
+		}
+		creds := credentials.NewTLS(&tls.Config{
+			RootCAs: systemRoots,
+		})
+		opts = append(opts, grpc.WithTransportCredentials(creds))
 	}
-	creds := credentials.NewTLS(&tls.Config{
-		RootCAs: systemRoots,
-	})
-	opts = append(opts, grpc.WithTransportCredentials(creds))
 
-	// https://www.googlecloudcommunity.com/gc/Serverless/Unable-to-connect-to-Cloud-Run-gRPC-server/m-p/422280/highlight/true#M345
-	//opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	server := fmt.Sprintf("%s:%s", serverHost, serverPort)
+	server := fmt.Sprintf("%s:%s", serverConfig.Host, serverConfig.Port)
 	conn, err := grpc.Dial(server, opts...)
 
 	if err != nil {

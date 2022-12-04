@@ -1,11 +1,10 @@
 repositories: "537845873"
-grpcPort: 8080
-httpPort: 8080
-httpPrefix: "/api"
+grpcPort: 50051
+httpPort: 1323
+httpPrefix: "/"
 
 image:
-  #tag: "0.1.0-a45667a"
-  tag: "0.1.0-6a88894-gcr"
+  tag: "0.1.0-6ed49ec"
   pullPolicy: Always
 
 resources:
@@ -23,7 +22,7 @@ httpproxy:
     replacement: /
   http:
     prefix: /api
-    replacement: /api
+    replacement: /
 
 ingress:
   enabled: false

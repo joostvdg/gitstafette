@@ -12,9 +12,10 @@ type RelayConfig struct {
 	Port     string
 	Protocol string
 	Endpoint *url.URL
+	Insecure bool
 }
 
-func CreateRelayConfig(relayEnabled bool, relayHost string, relayPort string, relayProtocol string) (*RelayConfig, error) {
+func CreateRelayConfig(relayEnabled bool, relayHost string, relayPort string, relayProtocol string, insecure bool) (*RelayConfig, error) {
 	relayEndpoint := fmt.Sprintf("%s://%s:%s", relayProtocol, relayHost, relayPort)
 	relayEndpointURL, err := url.Parse(relayEndpoint)
 	if err != nil {
@@ -30,5 +31,6 @@ func CreateRelayConfig(relayEnabled bool, relayHost string, relayPort string, re
 		Port:     relayPort,
 		Protocol: relayProtocol,
 		Endpoint: relayEndpointURL,
+		Insecure: insecure,
 	}, nil
 }

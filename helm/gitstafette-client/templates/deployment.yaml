@@ -36,8 +36,7 @@ spec:
             - "{{ .Values.grpcServer.host }}"
             - --port
             - "{{ .Values.grpcServer.port }}"
-            - --insecure
-            - "{{ .Values.grpcServer.insecure }}"
+            - --{{.Values.grpcServer.insecureFlag }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           livenessProbe:
             httpGet:

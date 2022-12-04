@@ -30,7 +30,8 @@ func main() {
 	// TODO so we need a repositories flag, like with the server
 	grpcServerPort := flag.String("port", "50051", "Port used for connecting to the GRPC Server")
 	grpcServerHost := flag.String("server", "127.0.0.1", "Server host to connect to")
-	grpcServerInsecure := flag.Bool("insecure", false, "If the grpc streaming server should be handled insecurely")
+	grpcServerInsecure := flag.Bool("insecure", false, "If the grpc streaming server should be handled insecurely, must provide either `secure` or `insecure` flag")
+	grpcServerSecure := flag.Bool("secure", true, "If the grpc streaming server should be handled securely, must provide either `secure` or `insecure` flag")
 	repositoryId := flag.String("repo", "", "GitHub Repository ID to receive webhook events for")
 	relayEnabled := flag.Bool("relayEnabled", false, "If the server should relay received events, rather than caching them for clients")
 	relayHost := flag.String("relayHost", "127.0.0.1", "Host address to relay events to")
@@ -52,7 +53,11 @@ func main() {
 	relay.InitiateRelay(serviceContext, *repositoryId)
 	cache.InitCache(*repositoryId, nil)
 
-	grpcServerConfig := api.CreateConfig(*grpcServerHost, *grpcServerPort, *grpcServerInsecure)
+	insecure := *grpcServerInsecure
+	if *grpcServerSecure {
+		insecure = false
+	}
+	grpcServerConfig := api.CreateConfig(*grpcServerHost, *grpcServerPort, insecure)
 	stream := initializeWebhookEventStreamOrDie(*repositoryId, grpcServerConfig, ctx)
 
 	initHealthCheckServer(ctx)

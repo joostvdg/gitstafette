@@ -79,7 +79,7 @@ client-cluster-receive:
 
 .PHONY: client-gcr-receive
 client-gcr-receive:
-	go run cmd/client/main.go --repo 537845873 --server "gitstafette-server-qad46fd4qq-ez.a.run.app" --port 443
+	go run cmd/client/main.go --repo 537845873 --server "gitstafette-server-qad46fd4qq-ez.a.run.app" --port 443 --secure
 
 go-build-server:
 	CGO_ENABLED=0 go build -o bin/$(NAME) cmd/server/main.go

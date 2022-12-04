@@ -1,13 +1,13 @@
 repositories: "537845873"
 
 image:
-  tag: "0.1.0-6ed49ec"
+  tag: "0.1.0-835c668"
   pullPolicy: Always
 
 grpcServer:
   host: "gitstafette-server-qad46fd4qq-ez.a.run.app"
   port: 443
-  insecure: false
+  insecureFlag: secure
 
 
 resources:

@@ -1,7 +1,7 @@
 repositories: "537845873"
 
 image:
-  tag: "0.1.0-6ed49ec"
+  tag: "0.1.0-5f9d9e6"
   pullPolicy: Always
 
 grpcServer:

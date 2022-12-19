@@ -15,6 +15,6 @@ func CreateConfig(host string, port string, insecure bool) *GRPCServerConfig {
 		Insecure: insecure,
 	}
 
-	log.Printf("Cosntructed GRPC Server configuration: %v", *config)
+	log.Printf("Constructed GRPC Server configuration: %v", *config)
 	return config
 }

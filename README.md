@@ -4,8 +4,6 @@ Git Webhook Relay demo app
 
 ## TODO
 
-* Helm support
-  * Helm chart for Client
 * Carvel package
   * personal carvel package repository
   * on GHCR
@@ -23,6 +21,12 @@ Git Webhook Relay demo app
 * Mutual TLS with self-signed certs / Custom CA
 * Expose State with GraphQL
   * with authentication
+* set Kubernetes security
+  * SecurityContext: https://snyk.io/blog/10-kubernetes-security-context-settings-you-should-understand/
+  * Seccomp profiles: https://itnext.io/seccomp-in-kubernetes-part-i-7-things-you-should-know-before-you-even-start-97502ad6b6d6
+    * https://www.pulumi.com/resources/kubernetes-seccomp-profiles/
+  * Secrity Admission: https://kubernetes.io/blog/2022/08/25/pod-security-admission-stable/
+  * Network policies: https://kubernetes.io/docs/concepts/services-networking/network-policies/
 * CI/CD In Kubernetes
   * Scan with Snyk?
   * Testcontainers?
@@ -32,8 +36,9 @@ Git Webhook Relay demo app
   * Operator?
   * (GRPC) Server should support multiple clients
   * add CR to cluster for individual Repo's, then spawn a client
+  * https://betterprogramming.pub/build-a-kubernetes-operator-in-10-minutes-11eec1492d30
 * Clients in multiple languages?
-  * Java
+  * Java (20, spring boot 3, native?)
   * Rust: https://blog.ediri.io/creating-a-microservice-in-rust-using-grpc?s=31
 
 ## Testing Kubernetes
@@ -106,4 +111,38 @@ But, we can use an Envoy proxy to route between the http and grpc servers.
 
 ```shell
 kubectl run tmp-shell --rm -i --tty --image nicolaka/netshoot
+```
+
+## Carvel Package
+
+### Carvel Repository
+
+```yaml
+apiVersion: packaging.carvel.dev/v1alpha1
+kind: PackageRepository
+metadata:
+  annotations:
+    kctrl.carvel.dev/repository-version: 0.0.0-08ddea6
+  creationTimestamp: "2022-12-11T19:31:21Z"
+  name: carvel.kearos.net
+spec:
+  fetch:
+    imgpkgBundle:
+      image: index.docker.io/caladreas/carvel-repo@sha256:328ce1a61054c6fb1aa8f291b3d32ca1b92407ad159cb1e266556d931d1cc771
+```
+
+### Server Package
+
+```yaml
+apiVersion: packaging.carvel.dev/v1alpha1
+kind: PackageInstall
+metadata:
+  name: gitstafette-server
+  namespace: gitstafette
+spec:
+  serviceAccountName: default
+  packageRef:
+    refName: server.gitstafette.kearos.net
+    versionSelection:
+      constraints: 0.0.0-08ddea6
 ```

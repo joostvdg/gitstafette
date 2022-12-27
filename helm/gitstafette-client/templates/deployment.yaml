@@ -1,13 +1,13 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "gitstafette-server.fullname" . }}
+  name: {{ include "gitstafette-config.fullname" . }}
   labels:
-    {{- include "gitstafette-server.labels" . | nindent 4 }}
+    {{- include "gitstafette-config.labels" . | nindent 4 }}
 spec:
   selector:
     matchLabels:
-      {{- include "gitstafette-server.selectorLabels" . | nindent 6 }}
+      {{- include "gitstafette-config.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -15,13 +15,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "gitstafette-server.selectorLabels" . | nindent 8 }}
+        {{- include "gitstafette-config.selectorLabels" . | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "gitstafette-server.serviceAccountName" . }}
+      serviceAccountName: {{ include "gitstafette-config.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -32,7 +32,7 @@ spec:
           args:
             - --repo
             - "{{ .Values.repositories }}"
-            - --server
+            - --config
             - "{{ .Values.grpcServer.host }}"
             - --port
             - "{{ .Values.grpcServer.port }}"

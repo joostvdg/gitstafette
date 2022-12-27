@@ -2,11 +2,11 @@
 apiVersion: projectcontour.io/v1
 kind: HTTPProxy
 metadata:
-  name: {{ include "gitstafette-server.fullname" . }}
+  name: {{ include "gitstafette-config.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "gitstafette-server.labels" . | nindent 4 }}
-    app.kubernetes.io/component: {{ include "gitstafette-server.fullname" . }}
+    {{- include "gitstafette-config.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ include "gitstafette-config.fullname" . }}
   {{- with .Values.httpproxy.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -17,13 +17,13 @@ spec:
     - conditions:
         - prefix: {{ .Values.httpproxy.grpc.prefix }}
       services:
-        - name: {{ include "gitstafette-server.fullname" . }}
+        - name: {{ include "gitstafette-config.fullname" . }}
           port: {{ .Values.grpcPort }}
           protocol: h2c
     - conditions:
         - prefix: {{ .Values.httpproxy.http.prefix }}
       services:
-        - name: {{ include "gitstafette-server.fullname" . }}
+        - name: {{ include "gitstafette-config.fullname" . }}
           port: {{ .Values.httpPort }}
       pathRewritePolicy:
         replacePrefix:

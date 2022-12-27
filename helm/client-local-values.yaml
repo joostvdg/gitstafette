@@ -5,7 +5,7 @@ image:
   pullPolicy: Always
 
 grpcServer:
-  host: gitstafette-server.gitstafette.svc.cluster.local
+  host: gitstafette-config.gitstafette.svc.cluster.local
   port: 50051
   insecureFlag: insecure
 

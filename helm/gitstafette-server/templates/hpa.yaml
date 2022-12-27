@@ -2,14 +2,14 @@
 apiVersion: autoscaling/v2beta1
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "gitstafette-server.fullname" . }}
+  name: {{ include "gitstafette-config.fullname" . }}
   labels:
-    {{- include "gitstafette-server.labels" . | nindent 4 }}
+    {{- include "gitstafette-config.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "gitstafette-server.fullname" . }}
+    name: {{ include "gitstafette-config.fullname" . }}
   minReplicas: {{ .Values.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.autoscaling.maxReplicas }}
   metrics:

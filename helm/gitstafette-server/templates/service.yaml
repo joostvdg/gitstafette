@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "gitstafette-server.fullname" . }}
+  name: {{ include "gitstafette-config.fullname" . }}
   labels:
-    {{- include "gitstafette-server.labels" . | nindent 4 }}
+    {{- include "gitstafette-config.labels" . | nindent 4 }}
   annotations:
     projectcontour.io/upstream-protocol.h2c: "{{ .Values.grpcPort }}"
 spec:
@@ -18,4 +18,4 @@ spec:
       targetPort: {{ .Values.grpcPort }}
       protocol: TCP
   selector:
-    {{- include "gitstafette-server.selectorLabels" . | nindent 4 }}
+    {{- include "gitstafette-config.selectorLabels" . | nindent 4 }}

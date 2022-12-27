@@ -1,4 +1,4 @@
-# Default values for gitstafette-server.
+# Default values for gitstafette-config.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
@@ -21,7 +21,7 @@ httpproxy:
     replacement: /
 
 image:
-  repository: caladreas/gitstafette-server
+  repository: caladreas/gitstafette-config
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: "0.1.0-1b8922b"

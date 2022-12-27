@@ -8,6 +8,7 @@ import (
 	"fmt"
 	api "github.com/joostvdg/gitstafette/api/v1"
 	"github.com/joostvdg/gitstafette/internal/cache"
+	"github.com/joostvdg/gitstafette/internal/config"
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
 	"github.com/joostvdg/gitstafette/internal/relay"
 	"google.golang.org/grpc"
@@ -27,17 +28,20 @@ import (
 
 func main() {
 	// TODO retrieve only events for specific repository
-	// TODO so we need a repositories flag, like with the server
+	// TODO so we need a repositories flag, like with the config
 	grpcServerPort := flag.String("port", "50051", "Port used for connecting to the GRPC Server")
 	grpcServerHost := flag.String("server", "127.0.0.1", "Server host to connect to")
-	grpcServerInsecure := flag.Bool("insecure", false, "If the grpc streaming server should be handled insecurely, must provide either `secure` or `insecure` flag")
-	grpcServerSecure := flag.Bool("secure", false, "If the grpc streaming server should be handled securely, must provide either `secure` or `insecure` flag")
+	grpcServerInsecure := flag.Bool("insecure", false, "If the grpc streaming config should be handled insecurely, must provide either `secure` or `insecure` flag")
+	grpcServerSecure := flag.Bool("secure", false, "If the grpc streaming config should be handled securely, must provide either `secure` or `insecure` flag")
 	repositoryId := flag.String("repo", "", "GitHub Repository ID to receive webhook events for")
-	relayEnabled := flag.Bool("relayEnabled", false, "If the server should relay received events, rather than caching them for clients")
+	relayEnabled := flag.Bool("relayEnabled", false, "If the config should relay received events, rather than caching them for clients")
 	relayHost := flag.String("relayHost", "127.0.0.1", "Host address to relay events to")
 	relayPort := flag.String("relayPort", "50051", "The port of the relay address")
 	relayProtocol := flag.String("relayProtocol", "grpc", "The protocol for the relay address (grpc, or http)")
-	relayInsecure := flag.Bool("relayInsecure", false, "If the relay server should be handled insecurely")
+	relayInsecure := flag.Bool("relayInsecure", false, "If the relay config should be handled insecurely")
+	caFileLocation := flag.String("caFileLocation", "", "The root CA file for trusting clients using TLS connection")
+	certFileLocation := flag.String("certFileLocation", "", "The certificate file for trusting clients using TLS connection")
+	certKeyFileLocation := flag.String("certKeyFileLocation", "", "The certificate key file for trusting clients using TLS connection")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -46,6 +50,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Malformed URL: ", err.Error())
 	}
+
 	serviceContext := &gcontext.ServiceContext{
 		Context: ctx,
 		Relay:   relayConfig,
@@ -57,7 +62,13 @@ func main() {
 	if *grpcServerSecure {
 		insecure = false
 	}
-	grpcServerConfig := api.CreateConfig(*grpcServerHost, *grpcServerPort, insecure)
+
+	tlsConfig, err := config.NewTLSConfig(*caFileLocation, *certFileLocation, *certKeyFileLocation, false)
+	if err != nil {
+		log.Fatal("Invalid certificate configuration: ", err.Error())
+	}
+
+	grpcServerConfig := api.CreateConfig(*grpcServerHost, *grpcServerPort, insecure, tlsConfig)
 	stream := initializeWebhookEventStreamOrDie(*repositoryId, grpcServerConfig, ctx)
 
 	initHealthCheckServer(ctx)
@@ -98,7 +109,7 @@ func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, r
 				response, err := stream.Recv()
 				if err == io.EOF {
 					log.Println("Server send end of stream, closing")
-					serverClosed <- true // server has ended the stream
+					serverClosed <- true // config has ended the stream
 					continue
 				}
 				if err != nil {
@@ -126,8 +137,14 @@ func initializeWebhookEventStreamOrDie(repositoryId string, serverConfig *api.GR
 	opts = append(opts, grpc.WithAuthority(serverConfig.Host))
 
 	if serverConfig.Insecure {
+		log.Printf("Not using TLS for GRPC server connection (insecure set)")
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	} else if serverConfig.TLSConfig.RootCAs != nil { // TODO verify if this is al that is required
+		log.Printf("Using provided TLS certificates for GRPC server connection (RootCA's set)")
+		clientCreds := credentials.NewTLS(serverConfig.TLSConfig)
+		opts = append(opts, grpc.WithTransportCredentials(clientCreds))
 	} else {
+		log.Printf("Using default system TLS certificates for GRPC server connection (secure, but no RootCA)")
 		// https://www.googlecloudcommunity.com/gc/Serverless/Unable-to-connect-to-Cloud-Run-gRPC-server/m-p/422280/highlight/true#M345
 		systemRoots, err := x509.SystemCertPool()
 		if err != nil {
@@ -143,7 +160,7 @@ func initializeWebhookEventStreamOrDie(repositoryId string, serverConfig *api.GR
 	conn, err := grpc.Dial(server, opts...)
 
 	if err != nil {
-		log.Fatalf("cannot connect to the server %s: %v\n", server, err)
+		log.Fatalf("cannot connect to the config %s: %v\n", server, err)
 	}
 
 	client := api.NewGitstafetteClient(conn)

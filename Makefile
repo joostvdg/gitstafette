@@ -48,6 +48,13 @@ compile:
 server-1:
 	go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051
 
+.PHONY: server-1-tls
+server-1-tls:
+	go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051 \
+		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
+		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/server-local.pem \
+		--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/server-local-key.pem
+
 .PHONY: server-2
 server-2:
 	go run cmd/server/main.go --repositories 537845873 --port 1324 --grpcPort 50052
@@ -60,6 +67,14 @@ server-relay:
 .PHONY: client-1
 client-1:
 	go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051
+
+.PHONY: client-1-tls
+client-1-tls:
+	go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 \
+		--secure \
+		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
+		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
+		--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem
 
 .PHONY: client-2
 client-2:
@@ -76,6 +91,14 @@ client-cluster-send:
 .PHONY: client-cluster-receive
 client-cluster-receive:
 	go run cmd/client/main.go --repo 537845873 --server "lemon.fritz.box" --port 80 --insecure
+
+.PHONY: client-cluster-receive-tls
+client-cluster-receive-tls:
+	go run cmd/client/main.go --repo 537845873 --server "lemon.fritz.box" --port 80 \
+		--secure \
+		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
+		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
+		--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem
 
 .PHONY: client-gcr-receive
 client-gcr-receive:

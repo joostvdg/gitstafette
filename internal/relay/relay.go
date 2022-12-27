@@ -113,11 +113,11 @@ func GRPCRelay(internalEvent *v1.WebhookEventInternal, relay *v1.RelayConfig, re
 	opts = append(opts, grpc.WithTransportCredentials(creds))
 
 	server := fmt.Sprintf("%s:%s", relay.Host, relay.Port)
-	log.Printf("GRPCRelay to server: %s\n", server)
+	log.Printf("GRPCRelay to config: %s\n", server)
 	conn, err := grpc.Dial(server, opts...)
 
 	if err != nil {
-		log.Fatalf("cannot connect to the server %s: %v\n", server, err)
+		log.Fatalf("cannot connect to the config %s: %v\n", server, err)
 	}
 
 	client := v1.NewGitstafetteClient(conn)
@@ -235,7 +235,7 @@ func doGrpcHealthcheck(serviceContext *gcontext.ServiceContext) (bool, error) {
 	server := fmt.Sprintf("%s:%s", relayConfig.Host, relayConfig.Port)
 	conn, err := grpc.Dial(server, opts...)
 	if err != nil {
-		log.Fatalf("cannot connect to the server %s: %v\n", server, err)
+		log.Fatalf("cannot connect to the config %s: %v\n", server, err)
 	}
 
 	client := healthpb.NewHealthClient(conn)
@@ -246,7 +246,7 @@ func doGrpcHealthcheck(serviceContext *gcontext.ServiceContext) (bool, error) {
 
 	if err != nil {
 		if stat, ok := status.FromError(err); ok && stat.Code() == codes.Unimplemented {
-			log.Printf("error: this server does not implement the grpc health protocol (grpc.health.v1.Health): %s\n", stat.Message())
+			log.Printf("error: this config does not implement the grpc health protocol (grpc.health.v1.Health): %s\n", stat.Message())
 		} else if stat, ok := status.FromError(err); ok && stat.Code() == codes.DeadlineExceeded {
 			log.Printf("timeout: health rpc did not complete within time\n")
 		} else {

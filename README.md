@@ -4,21 +4,18 @@ Git Webhook Relay demo app
 
 ## TODO
 
-* Carvel package
-  * personal carvel package repository
-  * on GHCR
-  * Client
-  * Server
+* Mutual TLS with self-signed certs / Custom CA
+  * update carvel package
+  * verify in raspi -> cert via Vault
+* Support Webhook with secret/token
 * CI/CD In Kubernetes
   * Build with Tekton / CloudNative BuildPacks
   * generate SBOM/SPDX
 * Add Sentry support for client
 * OpenTelemetry metrics
 * OpenTracing metrics
-* Support Webhook with secret/token
 * Host server in Google Cloud Run
   * use personal domain
-* Mutual TLS with self-signed certs / Custom CA
 * Expose State with GraphQL
   * with authentication
 * set Kubernetes security
@@ -46,7 +43,7 @@ Git Webhook Relay demo app
 ### HTTP
 
 ```shell
-kubectl port-forward -n gitstafette svc/gitstafette-server 7777:1323
+kubectl port-forward -n gitstafette svc/gitstafette-config 7777:1323
 ```
 
 ```shell
@@ -56,7 +53,7 @@ http :7777
 ### GRPC
 
 ```shell
-kubectl port-forward -n gitstafette svc/gitstafette-server 7777:50051
+kubectl port-forward -n gitstafette svc/gitstafette-config 7777:50051
 ```
 
 ```shell
@@ -137,12 +134,12 @@ spec:
 apiVersion: packaging.carvel.dev/v1alpha1
 kind: PackageInstall
 metadata:
-  name: gitstafette-server
+  name: gitstafette-config
   namespace: gitstafette
 spec:
   serviceAccountName: default
   packageRef:
-    refName: server.gitstafette.kearos.net
+    refName: config.gitstafette.kearos.net
     versionSelection:
       constraints: 0.0.0-08ddea6
 ```

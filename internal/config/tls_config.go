@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
+	"log"
 )
 
 func NewTLSConfig(caFileLocation string, certificateFileLocation string, certificateKeyFileLocation string, isServer bool) (*tls.Config, error) {
@@ -17,6 +18,8 @@ func NewTLSConfig(caFileLocation string, certificateFileLocation string, certifi
 			certificateFileLocation,
 			certificateKeyFileLocation,
 		)
+	} else {
+		log.Printf("Did not find a certificate with a key, no TLS certs")
 	}
 
 	if caFileLocation != "" {
@@ -38,12 +41,15 @@ func NewTLSConfig(caFileLocation string, certificateFileLocation string, certifi
 		if isServer {
 			tlsConfig.ClientCAs = ca
 			tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+			// TODO: should we configure the config name?
+			tlsConfig.ServerName = "gitstafette-server"
+			log.Printf("Configuring TLS for Server")
 		} else {
 			tlsConfig.RootCAs = ca
+			log.Printf("Configuring TLS for Client")
 		}
-
-		// TODO: should we configure the server name?
-		tlsConfig.ServerName = "gitstafette-server"
+	} else {
+		log.Printf("Did not find a CA cert, no TLS RootCA set")
 	}
 
 	return tlsConfig, err

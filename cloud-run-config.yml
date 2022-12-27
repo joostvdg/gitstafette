@@ -1,9 +1,9 @@
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: gitstafette-server
+  name: gitstafette-config
   namespace: '835288527708'
-  selfLink: /apis/serving.knative.dev/v1/namespaces/835288527708/services/gitstafette-server
+  selfLink: /apis/serving.knative.dev/v1/namespaces/835288527708/services/gitstafette-config
   uid: bfbd6f16-38b6-4c15-a677-a86aa84f9eef
   resourceVersion: AAXuKvC6cIU
   generation: 2
@@ -14,17 +14,17 @@ metadata:
     run.googleapis.com/client-name: gcloud
     serving.knative.dev/creator: joostvdg@gmail.com
     serving.knative.dev/lastModifier: joostvdg@gmail.com
-    client.knative.dev/user-image: gcr.io/kearos-gcp/gitstafette-server:0.1.0-a45667a
+    client.knative.dev/user-image: gcr.io/kearos-gcp/gitstafette-config:0.1.0-a45667a
     run.googleapis.com/client-version: 405.0.1
     run.googleapis.com/ingress: all
     run.googleapis.com/ingress-status: all
 spec:
   template:
     metadata:
-      name: gitstafette-server-00002-pif
+      name: gitstafette-config-00002-pif
       annotations:
         run.googleapis.com/client-name: gcloud
-        client.knative.dev/user-image: gcr.io/kearos-gcp/gitstafette-server:0.1.0-a45667a
+        client.knative.dev/user-image: gcr.io/kearos-gcp/gitstafette-config:0.1.0-a45667a
         run.googleapis.com/client-version: 405.0.1
         autoscaling.knative.dev/maxScale: '2'
     spec:
@@ -32,7 +32,7 @@ spec:
       timeoutSeconds: 30
       serviceAccountName: 835288527708-compute@developer.gserviceaccount.com
       containers:
-        - image: gcr.io/kearos-gcp/gitstafette-server:0.1.0-a45667a
+        - image: gcr.io/kearos-gcp/gitstafette-config:0.1.0-a45667a
           args:
             - --repositories
             - '537845873'
@@ -58,10 +58,10 @@ status:
     - type: RoutesReady
       status: 'True'
       lastTransitionTime: '2022-11-23T22:37:58.340741Z'
-  latestReadyRevisionName: gitstafette-server-00002-pif
-  latestCreatedRevisionName: gitstafette-server-00002-pif
+  latestReadyRevisionName: gitstafette-config-00002-pif
+  latestCreatedRevisionName: gitstafette-config-00002-pif
   traffic:
-    - revisionName: gitstafette-server-00002-pif
+    - revisionName: gitstafette-config-00002-pif
       percent: 100
       latestRevision: true
   url: https://gitstafette-server-qad46fd4qq-ez.a.run.app

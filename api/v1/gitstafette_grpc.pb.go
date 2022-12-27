@@ -70,7 +70,7 @@ func (c *gitstafetteClient) WebhookEventPush(ctx context.Context, in *WebhookEve
 	return out, nil
 }
 
-// GitstafetteServer is the server API for Gitstafette service.
+// GitstafetteServer is the config API for Gitstafette service.
 // All implementations must embed UnimplementedGitstafetteServer
 // for forward compatibility
 type GitstafetteServer interface {

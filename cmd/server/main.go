@@ -39,18 +39,19 @@ type server struct {
 }
 
 func main() {
-	port := flag.String("port", "1323", "Port used for hosting the config")
-	grpcPort := flag.String("grpcPort", "50051", "Port used for hosting the grpc config")
+	port := flag.String("port", "1323", "Port used for hosting the server")
+	grpcPort := flag.String("grpcPort", "50051", "Port used for hosting the grpc streaming server")
+	grpcHealthPort := flag.String("grpcHealthPort", "50052", "Port used for hosting the grpc health checks")
 	repositoryIDs := flag.String("repositories", "", "Comma separated list of GitHub repository IDs to listen for")
 	redisDatabase := flag.String("redisDatabase", "0", "Database used for redis")
-	redisHost := flag.String("redisHost", "localhost", "Host of the Redis config")
-	redisPort := flag.String("redisPort", "6379", "Port of the Redis config")
-	redisPassword := flag.String("redisPassword", "", "Password of the Redis config (default is no password")
-	relayEnabled := flag.Bool("relayEnabled", false, "If the config should relay received events, rather than caching them for clients")
+	redisHost := flag.String("redisHost", "localhost", "Host of the Redis server")
+	redisPort := flag.String("redisPort", "6379", "Port of the Redis server")
+	redisPassword := flag.String("redisPassword", "", "Password of the Redis server (default is no password")
+	relayEnabled := flag.Bool("relayEnabled", false, "If the server should relay received events, rather than caching them for clients")
 	relayHost := flag.String("relayHost", "127.0.0.1", "Host address to relay events to")
 	relayPort := flag.String("relayPort", "50051", "The port of the relay address")
 	relayProtocol := flag.String("relayProtocol", "grpc", "The protocol for the relay address (grpc, or http)")
-	relayInsecure := flag.Bool("relayInsecure", false, "If the relay config should be handled insecurely")
+	relayInsecure := flag.Bool("relayInsecure", false, "If the relay server should be handled insecurely")
 	caFileLocation := flag.String("caFileLocation", "", "The root CA file for trusting clients using TLS connection")
 	certFileLocation := flag.String("certFileLocation", "", "The certificate file for trusting clients using TLS connection")
 	certKeyFileLocation := flag.String("certKeyFileLocation", "", "The certificate key file for trusting clients using TLS connection")
@@ -88,9 +89,10 @@ func main() {
 		}
 	}
 	initSentry() // has to happen before we init Echo
+	grpcHealthServer := initializeGRPCHealthServer(*grpcHealthPort)
 	grpcServer := initializeGRPCServer(*grpcPort, tlsConfig)
 	echoServer := initializeEchoServer(relayConfig, *port)
-	log.Printf("Started http config on: %s, and grpc config on: %s\n", *port, *grpcPort)
+	log.Printf("Started http server on: %s, grpc server on: %s, and grpc health server on: %s\n", *port, *grpcPort, *grpcHealthPort)
 
 	// Wait for interrupt signal to gracefully shut down the config with a timeout of 10 seconds.
 	// Use a buffered channel to avoid missing signals as recommended for signal.Notify
@@ -99,12 +101,14 @@ func main() {
 	<-quit
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	log.Println("Shutting down Echo config")
+	log.Println("Shutting down Echo server")
 	if err := echoServer.Shutdown(ctx); err != nil {
 		echoServer.Logger.Fatal(err)
 	}
-	log.Println("Shutting down GRPC config")
+	log.Println("Shutting down GRPC gitstafette server")
 	grpcServer.GracefulStop()
+	log.Println("Shutting down GRPC health server")
+	grpcHealthServer.GracefulStop()
 	cache.PrepareForShutdown()
 	log.Printf("Shutting down!\n")
 }
@@ -149,13 +153,30 @@ func initializeEchoServer(relayConfig *api.RelayConfig, port string) *echo.Echo 
 	e.GET("/v1/watchlist/", internal_api.HandleWatchListGet)
 	e.GET("/v1/events/:repo", internal_api.HandleRetrieveEventsForRepository)
 
-	// Start Echo config
+	// Start Echo server
 	go func(echoPort string) {
 		if err := e.Start(":" + echoPort); err != nil && err != http.ErrServerClosed {
-			e.Logger.Fatal("shutting down the config")
+			e.Logger.Fatal("shutting down the Echo server")
 		}
 	}(port)
 	return e
+}
+
+func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
+	grpcServer := grpc.NewServer()
+
+	go func(s *grpc.Server) {
+		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
+		if err != nil {
+			log.Fatalf("failed to listen: %v", err)
+		}
+		grpc_health_v1.RegisterHealthServer(s, &HealthCheckService{})
+		if err := s.Serve(grpcListener); err != nil {
+			log.Fatalf("failed to serve: %v", err)
+		}
+		log.Println("Shutdown GRPC health server")
+	}(grpcServer)
+	return grpcServer
 }
 
 func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config) *grpc.Server {
@@ -168,12 +189,11 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config) *grpc.Server {
 			log.Fatalf("failed to listen: %v", err)
 		}
 
-		grpc_health_v1.RegisterHealthServer(s, &HealthCheckService{})
 		api.RegisterGitstafetteServer(s, server{})
 		if err := s.Serve(grpcListener); err != nil {
 			log.Fatalf("failed to serve: %v", err)
 		}
-		log.Println("Shutdown GRPC config")
+		log.Println("Shutdown GRPC gitstafette server")
 	}(grpcServer)
 	return grpcServer
 }

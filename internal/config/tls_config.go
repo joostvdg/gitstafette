@@ -28,7 +28,10 @@ func NewTLSConfig(caFileLocation string, certificateFileLocation string, certifi
 			return nil, err
 		}
 
-		ca := x509.NewCertPool()
+		ca, err := x509.SystemCertPool()
+		if err != nil {
+			log.Printf("cannot load root CA certs: %v", err)
+		}
 		ok := ca.AppendCertsFromPEM([]byte(b))
 
 		if !ok {

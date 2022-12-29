@@ -8,7 +8,8 @@ import (
 
 type GitstafetteContext struct {
 	echo.Context
-	Relay *gitstafette_v1.RelayConfig
+	WebhookHMAC string
+	Relay       *gitstafette_v1.RelayConfig
 }
 
 type ServiceContext struct {

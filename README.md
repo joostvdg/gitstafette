@@ -86,6 +86,17 @@ http POST http://localhost:1323/v1/github/ \
   Test=True
 ```
 
+### Invalid HMAC
+
+```shell
+http POST http://localhost:1323/v1/github/ \
+  X-Github-Delivery:d4049330-377e-11ed-9c2e-1ae286aab35f \
+  X-Github-Hook-Installation-Target-Id:537845873 \
+  X-Github-Hook-Installation-Target-Type:repository \
+  x-hub-signature-256:sha256=b101fdde955cb8809872eaa41d56838c9fbaa7aace134743cfd1fea7b87dc74e \
+  Test=True
+```
+
 ## Google Cloud Run
 
 * https://cloud.google.com/run/docs/configuring/containers

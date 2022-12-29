@@ -48,6 +48,12 @@ compile:
 server-1:
 	go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051
 
+.PHONY: server-1-hmac
+server-1-hmac:
+	go run cmd/server/main.go --repositories 537845873 \
+		--port 1323 --grpcPort 50051 \
+		--webhookHMAC=${GITSTAFETTE_HMAC}
+
 .PHONY: server-1-tls
 server-1-tls:
 	go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051 \

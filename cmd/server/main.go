@@ -55,6 +55,7 @@ func main() {
 	caFileLocation := flag.String("caFileLocation", "", "The root CA file for trusting clients using TLS connection")
 	certFileLocation := flag.String("certFileLocation", "", "The certificate file for trusting clients using TLS connection")
 	certKeyFileLocation := flag.String("certKeyFileLocation", "", "The certificate key file for trusting clients using TLS connection")
+	webhookHMAC := flag.String("webhookHMAC", "", "The hmac token used to verify the webhook events")
 	flag.Parse()
 
 	tlsConfig, err := config.NewTLSConfig(*caFileLocation, *certFileLocation, *certKeyFileLocation, true)
@@ -91,7 +92,7 @@ func main() {
 	initSentry() // has to happen before we init Echo
 	grpcHealthServer := initializeGRPCHealthServer(*grpcHealthPort)
 	grpcServer := initializeGRPCServer(*grpcPort, tlsConfig)
-	echoServer := initializeEchoServer(relayConfig, *port)
+	echoServer := initializeEchoServer(relayConfig, *port, *webhookHMAC)
 	log.Printf("Started http server on: %s, grpc server on: %s, and grpc health server on: %s\n", *port, *grpcPort, *grpcHealthPort)
 
 	// Wait for interrupt signal to gracefully shut down the config with a timeout of 10 seconds.
@@ -130,20 +131,20 @@ func initSentry() {
 	}
 }
 
-func initializeEchoServer(relayConfig *api.RelayConfig, port string) *echo.Echo {
+func initializeEchoServer(relayConfig *api.RelayConfig, port string, webhookHMAC string) *echo.Echo {
 	e := echo.New()
 	e.Use(func(e echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			gitstatefetteContext := &gcontext.GitstafetteContext{
-				Context: c,
-				Relay:   relayConfig,
+				Context:     c,
+				WebhookHMAC: webhookHMAC,
+				Relay:       relayConfig,
 			}
 			return e(gitstatefetteContext)
 		}
 	})
 
 	e.Use(middleware.Logger())
-	e.Use(middleware.Recover())
 	e.Use(sentryecho.New(sentryecho.Options{}))
 
 	e.GET("/", func(c echo.Context) error {

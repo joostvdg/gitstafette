@@ -151,7 +151,7 @@ func initializeEchoServer(relayConfig *api.RelayConfig, port string, webhookHMAC
 		return c.String(http.StatusOK, "Hello, World!")
 	})
 	e.POST("/v1/github/", internal_api.HandleGitHubPost)
-	e.GET("/v1/watchlist/", internal_api.HandleWatchListGet)
+	e.GET("/v1/watchlist", internal_api.HandleWatchListGet)
 	e.GET("/v1/events/:repo", internal_api.HandleRetrieveEventsForRepository)
 
 	// Start Echo server

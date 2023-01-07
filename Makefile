@@ -117,16 +117,16 @@ go-build-client:
 	CGO_ENABLED=0 go build -o bin/$(NAME) cmd/client/main.go
 
 dxbuild-server:
-	docker buildx build . --platform linux/arm64,linux/amd64 --tag ghcr.io/joostvdg/gitstafette/server:${PACKAGE_VERSION}
+	docker buildx build . -f ./docker/server/Dockerfile --platform linux/arm64,linux/amd64 --tag ghcr.io/joostvdg/gitstafette/server:${PACKAGE_VERSION}
 
 dxpush-server:
-	docker buildx build . --platform linux/arm64,linux/amd64 --tag ghcr.io/joostvdg/gitstafette/server:${PACKAGE_VERSION} --push
+	docker buildx build . -f ./docker/server/Dockerfile --platform linux/arm64,linux/amd64 --tag ghcr.io/joostvdg/gitstafette/server:${PACKAGE_VERSION} --push
 
 dxbuild-client:
-	docker buildx build . -f Dockerfile.client --platform linux/arm64,linux/amd64 --tag ghcr.io/joostvdg/gitstafette/client:${PACKAGE_VERSION}
+	docker buildx build . -f ./docker/client/Dockerfile --platform linux/arm64,linux/amd64 --tag ghcr.io/joostvdg/gitstafette/client:${PACKAGE_VERSION}
 
 dxpush-client:
-	docker buildx build . -f Dockerfile.client --platform linux/arm64,linux/amd64 --tag ghcr.io/joostvdg/gitstafette/client:${PACKAGE_VERSION} --push
+	docker buildx build . -f ./docker/client/Dockerfile --platform linux/arm64,linux/amd64 --tag ghcr.io/joostvdg/gitstafette/client:${PACKAGE_VERSION} --push
 
 
 gpush: dxpush-server

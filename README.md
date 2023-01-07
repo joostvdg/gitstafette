@@ -4,10 +4,6 @@ Git Webhook Relay demo app
 
 ## TODO
 
-* Mutual TLS with self-signed certs / Custom CA
-  * update carvel package
-  * verify in raspi -> cert via Vault
-* Support Webhook with secret/token
 * CI/CD In Kubernetes
   * Build with Tekton / CloudNative BuildPacks
   * generate SBOM/SPDX
@@ -37,6 +33,11 @@ Git Webhook Relay demo app
 * Clients in multiple languages?
   * Java (20, spring boot 3, native?)
   * Rust: https://blog.ediri.io/creating-a-microservice-in-rust-using-grpc?s=31
+
+### HMAC Support
+
+* https://golangcode.com/generate-sha256-hmac/
+* https://docs.github.com/en/developers/webhooks-and-events/webhooks/securing-your-webhooks
 
 ## Testing Kubernetes
 

@@ -3,7 +3,7 @@ FROM golang:1.19-buster as builder
 ARG TARGETARCH
 ARG TARGETOS
 WORKDIR /go/src/gitstafette
-COPY ../../go.mod go.sum ./
+COPY go.mod go.sum ./
 RUN go mod download
 COPY ../.. .
 RUN make go-build-server

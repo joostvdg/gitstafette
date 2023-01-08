@@ -5,7 +5,7 @@ ARG TARGETOS
 WORKDIR /go/src/gitstafette
 COPY go.mod go.sum ./
 RUN go mod download
-COPY ../.. .
+COPY . .
 RUN make go-build-server
 
 FROM debian:buster-slim

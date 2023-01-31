@@ -68,6 +68,31 @@ grpc-health-probe -addr=localhost:7777
 ### GRPC
 
 * https://github.com/fullstorydev/grpcurl
+* https://github.com/grpc-ecosystem/grpc-cloud-run-example/tree/master/golang
+
+### Test GRPC
+
+* running server without TLS
+
+```shell
+grpcurl \
+  -plaintext \
+  -proto api/v1/gitstafette.proto \
+  -d '{"client_id": "me", "repository_id": "537845873", "last_received_event_id": 1}' \
+  localhost:50051 \
+  Gitstafette.FetchWebhookEvents
+```
+
+* running server with TLS
+
+```shell
+grpcurl \                                                                                                                               ─╯
+  -insecure \
+  -proto api/v1/gitstafette.proto \
+  -d '{"client_id": "me", "repository_id": "537845873", "last_received_event_id": 1}' \
+  localhost:50051 \
+  Gitstafette.FetchWebhookEvents
+```
 
 ### GRPC HealthCheck
 
@@ -84,8 +109,21 @@ http POST http://localhost:1323/v1/github/ \
   X-Github-Delivery:d4049330-377e-11ed-9c2e-1ae286aab35f \
   X-Github-Hook-Installation-Target-Id:537845873 \
   X-Github-Hook-Installation-Target-Type:repository \
+  X-GitHub-Event:push \
   Test=True
 ```
+
+### GCR
+
+```shell
+http POST https://gitstafette-server-http-qad46fd4qq-ez.a.run.app/v1/github/ \
+  X-Github-Delivery:d4049330-377e-11ed-9c2e-1ae286aab35f \
+  X-Github-Hook-Installation-Target-Id:537845873 \
+  X-Github-Hook-Installation-Target-Type:repository \
+  X-GitHub-Event:push \
+  Test=True
+```
+
 
 ### Invalid HMAC
 
@@ -94,6 +132,7 @@ http POST http://localhost:1323/v1/github/ \
   X-Github-Delivery:d4049330-377e-11ed-9c2e-1ae286aab35f \
   X-Github-Hook-Installation-Target-Id:537845873 \
   X-Github-Hook-Installation-Target-Type:repository \
+  X-GitHub-Event:push \
   x-hub-signature-256:sha256=b101fdde955cb8809872eaa41d56838c9fbaa7aace134743cfd1fea7b87dc74e \
   Test=True
 ```

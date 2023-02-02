@@ -34,6 +34,7 @@ func (i *inMemoryStore) Store(repositoryId string, event *api.WebhookEventIntern
 		}
 	}
 
+	event.IsRelayed = false
 	events = append(events, event)
 	i.events[repositoryId] = events
 	log.Printf("Cached event for repository %v, currently holding %d events for the repository",

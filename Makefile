@@ -44,9 +44,21 @@ compile:
 	--go-grpc_opt=paths=source_relative \
 	--proto_path=.
 
+.PHONY: probe-1
+probe-1:
+	grpc-health-probe -addr=localhost:50051
+
+.PHONY: probe-1-tls
+probe-1-tls:
+	grpc-health-probe -addr=localhost:50051 \
+		-tls \
+		-tls-ca-cert /mnt/d/Projects/homelab-rpi/certs/ca.pem \
+		-tls-client-cert /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
+		-tls-client-key /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem
+
 .PHONY: server-1
 server-1:
-	go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051
+	go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051 --grpcHealthPort 50051
 
 .PHONY: server-1-hmac
 server-1-hmac:
@@ -56,7 +68,7 @@ server-1-hmac:
 
 .PHONY: server-1-tls
 server-1-tls:
-	go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051 \
+	go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051 --grpcHealthPort 50051 \
 		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
 		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/server-local.pem \
 		--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/server-local-key.pem
@@ -72,7 +84,7 @@ server-relay:
 
 .PHONY: client-1
 client-1:
-	go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051
+	go run cmd/client/main.go --repo 537845873 --server "localhost" --port 50051 --insecure=false
 
 .PHONY: client-1-tls
 client-1-tls:
@@ -110,6 +122,38 @@ client-cluster-receive-tls:
 client-gcr-receive:
 	go run cmd/client/main.go --repo 537845873 --server "gitstafette-server-qad46fd4qq-ez.a.run.app" --port 443 --secure
 
+.PHONY: client-local-server-relay-jenkins
+client-local-server-relay-jenkins:
+	go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 \
+	--secure \
+	--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
+	--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
+	--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem \
+	--relayEnabled=true \
+	--relayHost="cranberry.fritz.box" \
+	--relayPath="/github-webhook/" \
+	--relayHealthCheckPath="/login" \
+	--relayPort=443 \
+	--relayProtocol=https \
+	--relayInsecure=true \
+	--clientId="test-local"
+
+.PHONY: client-gcr-server-relay-jenkins
+client-gcr-server-relay-jenkins:
+	go run cmd/client/main.go --repo 537845873 --server gitstafette-server-qad46fd4qq-ez.a.run.app --port 443 \
+	--secure \
+	--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
+	--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
+	--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem \
+	--relayEnabled=true \
+	--relayHost="cranberry.fritz.box" \
+	--relayPath="/github-webhook/" \
+	--relayHealthCheckPath="/login" \
+	--relayPort=443 \
+	--relayProtocol=https \
+	--relayInsecure=true \
+	--clientId="test-local"
+
 go-build-server:
 	CGO_ENABLED=0 go build -o bin/$(NAME) cmd/server/main.go
 
@@ -130,8 +174,8 @@ dxpush-client:
 
 
 gpush: dxpush-server
-	docker pull caladreas/gitstafette-server:${PACKAGE_VERSION}
-	docker tag caladreas/gitstafette-server:${PACKAGE_VERSION} gcr.io/${PROJECT_ID}/${NAME}-server:${PACKAGE_VERSION}
+	docker pull ghcr.io/joostvdg/gitstafette/server:${PACKAGE_VERSION}
+	docker tag ghcr.io/joostvdg/gitstafette/server:${PACKAGE_VERSION} gcr.io/${PROJECT_ID}/${NAME}-server:${PACKAGE_VERSION}
 	docker push gcr.io/${PROJECT_ID}/${NAME}-server:${PACKAGE_VERSION}
 
 
@@ -141,7 +185,7 @@ gdeploy: gpush
 		--platform managed --allow-unauthenticated --region=europe-west4 \
 		--args="--repositories" --args="537845873"\
 		--args="--port=8080"\
-      	--args="--grpcPort=50051" \
+      	--args="--grpcPort=50051"\
 		--args="--relayEnabled=true"\
 		--args="--relayHost=gitstafette-server-qad46fd4qq-ez.a.run.app"\
 		--args="--relayPort=443"
@@ -153,7 +197,8 @@ gdeploy: gpush
 		--platform managed --allow-unauthenticated --region=europe-west4 \
 		--args="--repositories=537845873" \
 		--args="--port=1323"\
-      	--args="--grpcPort=8080"
+      	--args="--grpcPort=8080" \
+      	--args="--grpcHealthPort=8080"
 
 helm-server:
 	helm upgrade gitstafette-server --install -n gitstafette --create-namespace ./helm/gitstafette-server --values ./helm/server-values.yaml

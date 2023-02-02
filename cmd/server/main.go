@@ -49,6 +49,8 @@ func main() {
 	redisPassword := flag.String("redisPassword", "", "Password of the Redis server (default is no password")
 	relayEnabled := flag.Bool("relayEnabled", false, "If the server should relay received events, rather than caching them for clients")
 	relayHost := flag.String("relayHost", "127.0.0.1", "Host address to relay events to")
+	relayPath := flag.String("relayPath", "/", "Path on the host address to relay events to")
+	relayHealthCheckPath := flag.String("relayHealthCheckPath", "/", "Path on the host address to do health check on, for relay target")
 	relayPort := flag.String("relayPort", "50051", "The port of the relay address")
 	relayProtocol := flag.String("relayProtocol", "grpc", "The protocol for the relay address (grpc, or http)")
 	relayInsecure := flag.Bool("relayInsecure", false, "If the relay server should be handled insecurely")
@@ -72,7 +74,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPort, *relayProtocol, *relayInsecure)
+	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPath, *relayHealthCheckPath, *relayPort, *relayProtocol, *relayInsecure)
 	if err != nil {
 		log.Fatal("Malformed URL: ", err.Error())
 	}
@@ -90,8 +92,11 @@ func main() {
 		}
 	}
 	initSentry() // has to happen before we init Echo
-	grpcHealthServer := initializeGRPCHealthServer(*grpcHealthPort)
-	grpcServer := initializeGRPCServer(*grpcPort, tlsConfig)
+	var grpcHealthServer *grpc.Server
+	if *grpcHealthPort != *grpcPort {
+		grpcHealthServer = initializeGRPCHealthServer(*grpcHealthPort)
+	}
+	grpcServer := initializeGRPCServer(*grpcPort, tlsConfig, grpcHealthServer)
 	echoServer := initializeEchoServer(relayConfig, *port, *webhookHMAC)
 	log.Printf("Started http server on: %s, grpc server on: %s, and grpc health server on: %s\n", *port, *grpcPort, *grpcHealthPort)
 
@@ -109,7 +114,9 @@ func main() {
 	log.Println("Shutting down GRPC gitstafette server")
 	grpcServer.GracefulStop()
 	log.Println("Shutting down GRPC health server")
-	grpcHealthServer.GracefulStop()
+	if *grpcHealthPort != *grpcPort {
+		grpcHealthServer.GracefulStop()
+	}
 	cache.PrepareForShutdown()
 	log.Printf("Shutting down!\n")
 }
@@ -171,6 +178,7 @@ func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
 		if err != nil {
 			log.Fatalf("failed to listen: %v", err)
 		}
+
 		grpc_health_v1.RegisterHealthServer(s, &HealthCheckService{})
 		if err := s.Serve(grpcListener); err != nil {
 			log.Fatalf("failed to serve: %v", err)
@@ -180,9 +188,12 @@ func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
 	return grpcServer
 }
 
-func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config) *grpc.Server {
-	serverCredentials := credentials.NewTLS(tlsConfig)
-	grpcServer := grpc.NewServer(grpc.Creds(serverCredentials))
+func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *grpc.Server) *grpc.Server {
+	grpcServer := grpc.NewServer()
+	if tlsConfig != nil {
+		serverCredentials := credentials.NewTLS(tlsConfig)
+		grpcServer = grpc.NewServer(grpc.Creds(serverCredentials))
+	}
 
 	go func(s *grpc.Server) {
 		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
@@ -190,7 +201,15 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config) *grpc.Server {
 			log.Fatalf("failed to listen: %v", err)
 		}
 
-		api.RegisterGitstafetteServer(s, server{})
+		log.Printf("Starting GRPC server")
+		api.RegisterGitstafetteServer(s, &server{})
+		if healthServer == nil {
+			log.Printf("GRPC HealthCheck server is empty, running service with normal GRPC server\n")
+			grpc_health_v1.RegisterHealthServer(s, &HealthCheckService{})
+		} else {
+			log.Printf("Running GRPC HealthCheck server standalone\n", s.GetServiceInfo())
+		}
+
 		if err := s.Serve(grpcListener); err != nil {
 			log.Fatalf("failed to serve: %v", err)
 		}
@@ -209,6 +228,7 @@ func (s server) WebhookEventPush(ignoredContext context.Context, request *api.We
 	err := cache.Event(request.RepositoryId, request.WebhookEvent)
 	if err == nil {
 		response.Accepted = true
+		log.Printf("Accepted Webhook Event Push for Repo %v: %v", request.RepositoryId, request.WebhookEvent.EventId)
 	}
 	return response, err
 }
@@ -230,6 +250,7 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 			response := &api.WebhookEventsResponse{
 				WebhookEvents: events,
 			}
+			log.Printf("Send %v events to client (%v) for repo %v", len(events), request.ClientId, request.RepositoryId)
 			srv.Send(response)
 			updateRelayStatus(events, request.RepositoryId)
 
@@ -260,6 +281,7 @@ func retrieveCachedEventsForRepository(repositoryId string) ([]*api.WebhookEvent
 	cachedEvents := cache.Store.RetrieveEventsForRepository(repositoryId)
 	for _, cachedEvent := range cachedEvents {
 		if cachedEvent.IsRelayed {
+			log.Printf("Event is already relayed: %v", cachedEvent)
 			continue
 		}
 		event := api.InternalToExternalEvent(cachedEvent)

@@ -59,15 +59,22 @@ func eventHeadersToHTTPHeaders(eventHeaders []v1.WebhookEventHeader) http.Header
 
 // HTTPRelay testing the relay functionality
 func HTTPRelay(event *v1.WebhookEventInternal, relayEndpoint *url.URL) {
+	log.Printf("Doing HTTPRelay\n")
 	client := resty.New()
-
+	// TODO: handle this based on secure/insecure and TLS config
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+	client.SetTLSClientConfig(tlsConfig)
 	request := client.R().SetBody(event.EventBody)
 	request.Header = eventHeadersToHTTPHeaders(event.Headers)
 	response, err := request.Post(relayEndpoint.String())
 	if err != nil {
-		fmt.Printf("Encountered an error when relaying: %v\n", err)
+		log.Printf("Encountered an error when relaying: %v\n", err)
+		log.Printf("Request: %v\n", request)
+		log.Printf("Request Headers: %v\n", request.Header)
 	} else {
-		fmt.Printf("Response: %v\n", response)
+		log.Printf("Response (%v): %v\n", response.StatusCode(), response)
 	}
 
 }
@@ -75,7 +82,7 @@ func HTTPRelay(event *v1.WebhookEventInternal, relayEndpoint *url.URL) {
 func RelayCachedEvents(serviceContext *gcontext.ServiceContext, repositoryId string) {
 	ctx := serviceContext.Context
 	relay := serviceContext.Relay
-	clock := time.NewTicker(30 * time.Second)
+	clock := time.NewTicker(10 * time.Second)
 	for {
 		select {
 		case <-clock.C:
@@ -167,13 +174,13 @@ func RelayHealthCheck(serviceContext *gcontext.ServiceContext) {
 			status.TimeOfLastCheck = time.Now()
 			healthy := false
 			var err error
-			if relay.Protocol == "http" {
-				healthy, err = doHttpHealthcheck(relay.Endpoint, repoIds[0])
+			if relay.Protocol == "grpc" {
+				healthy, err = doGrpcHealthcheck(serviceContext)
+			} else if relay.Protocol == "http" || relay.Protocol == "https" {
+				healthy, err = doHttpHealthcheck(relay.HealthEndpoint, repoIds[0])
 				if err != nil {
 					fmt.Printf("Encountered an error doing healthcheck on relay: %v\n", err)
 				}
-			} else if relay.Protocol == "grpc" {
-				healthy, err = doGrpcHealthcheck(serviceContext)
 			} else {
 				fmt.Printf("Invalid relay protocol %s\n", relay.Protocol)
 			}
@@ -264,19 +271,26 @@ func doGrpcHealthcheck(serviceContext *gcontext.ServiceContext) (bool, error) {
 
 // TODO verify healthcheck with Jenkins or something similar
 func doHttpHealthcheck(relayEndpoint *url.URL, repositoryId string) (bool, error) {
-	fmt.Printf("Doing healthcheck for relay %v (using repo %v)\n", relayEndpoint.String(), repositoryId)
+	log.Printf("Doing healthcheck for relay %v (using repo %v)\n", relayEndpoint.String(), repositoryId)
 	client := resty.New()
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+	client.SetTLSClientConfig(tlsConfig)
 	response, err := client.R().
 		SetHeader("X-GitHub-InternalEvent", "ping").
 		SetHeader("X-GitHub-Hook-Installation-Target-Type", "repository").
 		SetHeader("X-GitHub-Hook-Installation-Target-ID", repositoryId).
 		SetHeader("User-Agent", "Gitstafette").
 		SetBody(`{"zen": "Design for failure.","repository": {"id": ` + repositoryId + `}}`).
-		Post(relayEndpoint.String())
+		Get(relayEndpoint.String())
+	// TODO: add POST option
+	//Post(relayEndpoint.String())
 	if err != nil {
-		fmt.Printf("Encountered an error when relaying: %v\n", err)
+		log.Printf("Encountered an error when relaying: %v\n", err)
 		return false, err
 	}
-	fmt.Printf("Response: %v\n", response)
-	return true, nil
+	// TODO: set behind debug flag
+	//fmt.Printf("Response: %v\n", response)
+	return response.IsSuccess(), nil
 }

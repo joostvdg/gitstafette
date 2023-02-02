@@ -36,17 +36,20 @@ func main() {
 	repositoryId := flag.String("repo", "", "GitHub Repository ID to receive webhook events for")
 	relayEnabled := flag.Bool("relayEnabled", false, "If the config should relay received events, rather than caching them for clients")
 	relayHost := flag.String("relayHost", "127.0.0.1", "Host address to relay events to")
+	relayPath := flag.String("relayPath", "/", "Path on the host address to relay events to")
+	relayHealthCheckPath := flag.String("relayHealthCheckPath", "/", "Path on the host address to do health check on, for relay target")
 	relayPort := flag.String("relayPort", "50051", "The port of the relay address")
 	relayProtocol := flag.String("relayProtocol", "grpc", "The protocol for the relay address (grpc, or http)")
 	relayInsecure := flag.Bool("relayInsecure", false, "If the relay config should be handled insecurely")
 	caFileLocation := flag.String("caFileLocation", "", "The root CA file for trusting clients using TLS connection")
 	certFileLocation := flag.String("certFileLocation", "", "The certificate file for trusting clients using TLS connection")
 	certKeyFileLocation := flag.String("certKeyFileLocation", "", "The certificate key file for trusting clients using TLS connection")
+	clientId := flag.String("clientId", "gitstafette-client", "The id of the client to identify connections")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPort, *relayProtocol, *relayInsecure)
+	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPath, *relayHealthCheckPath, *relayPort, *relayProtocol, *relayInsecure)
 	if err != nil {
 		log.Fatal("Malformed URL: ", err.Error())
 	}
@@ -69,7 +72,7 @@ func main() {
 	}
 
 	grpcServerConfig := api.CreateConfig(*grpcServerHost, *grpcServerPort, insecure, tlsConfig)
-	stream := initializeWebhookEventStreamOrDie(*repositoryId, grpcServerConfig, ctx)
+	stream := initializeWebhookEventStreamOrDie(*repositoryId, *clientId, grpcServerConfig, ctx)
 
 	initHealthCheckServer(ctx)
 	handleWebhookEventStream(stream, *repositoryId, ctx)
@@ -114,7 +117,8 @@ func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, r
 				}
 				if err != nil {
 					log.Printf("Error resceiving stream: %v\n", err) // is this recoverable or not?
-					continue
+					serverClosed <- true
+					return
 				}
 
 				log.Printf("Received %d WebhookEvents", len(response.WebhookEvents))
@@ -132,7 +136,7 @@ func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, r
 	<-serverClosed
 }
 
-func initializeWebhookEventStreamOrDie(repositoryId string, serverConfig *api.GRPCServerConfig, ctx context.Context) api.Gitstafette_FetchWebhookEventsClient {
+func initializeWebhookEventStreamOrDie(repositoryId string, clientId string, serverConfig *api.GRPCServerConfig, ctx context.Context) api.Gitstafette_FetchWebhookEventsClient {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithAuthority(serverConfig.Host))
 
@@ -165,7 +169,7 @@ func initializeWebhookEventStreamOrDie(repositoryId string, serverConfig *api.GR
 
 	client := api.NewGitstafetteClient(conn)
 	request := &api.WebhookEventsRequest{
-		ClientId:            "myself",
+		ClientId:            clientId,
 		RepositoryId:        repositoryId,
 		LastReceivedEventId: 0,
 	}

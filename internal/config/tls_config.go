@@ -9,6 +9,9 @@ import (
 )
 
 func NewTLSConfig(caFileLocation string, certificateFileLocation string, certificateKeyFileLocation string, isServer bool) (*tls.Config, error) {
+	if certificateFileLocation == "" && certificateKeyFileLocation == "" && caFileLocation == "" {
+		return nil, nil
+	}
 	var err error
 	tlsConfig := &tls.Config{}
 

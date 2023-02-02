@@ -2,6 +2,7 @@ package gitstafette_v1
 
 import (
 	"bytes"
+	"log"
 	"time"
 )
 
@@ -21,21 +22,24 @@ type WebhookEventHeader struct {
 }
 
 func ExternalToInternalEvent(event *WebhookEvent) *WebhookEventInternal {
-	webhookEventHeaders := make([]WebhookEventHeader, len(event.Headers))
+	webhookEventHeaders := make([]WebhookEventHeader, 0)
 	deliveryId := ""
 	for _, header := range event.Headers {
 		key := header.Name
 		value := header.Values
-		webhookEventHeader := WebhookEventHeader{
-			Key:        key,
-			FirstValue: value,
+		if key != "" && value != "" {
+			webhookEventHeader := WebhookEventHeader{
+				Key:        key,
+				FirstValue: value,
+			}
+			if key == DeliveryIdHeader {
+				deliveryId = value
+			}
+			webhookEventHeaders = append(webhookEventHeaders, webhookEventHeader)
 		}
-		if key == DeliveryIdHeader {
-			deliveryId = value
-		}
-		webhookEventHeaders = append(webhookEventHeaders, webhookEventHeader)
 	}
 
+	log.Printf("webhookEventHeaders: %v\n", webhookEventHeaders)
 	eventBody := bytes.NewBuffer(event.Body).String()
 	return &WebhookEventInternal{
 		ID:        deliveryId,

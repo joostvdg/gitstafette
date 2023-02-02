@@ -56,6 +56,24 @@ probe-1-tls:
 		-tls-client-cert /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
 		-tls-client-key /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem
 
+.PHONY: gcurl-gcr
+gcurl-gcr:
+	grpcurl \
+	  -proto api/health/v1/healthcheck.proto \
+	  gitstafette-server-qad46fd4qq-ez.a.run.app:443 \
+	  grpc.health.v1.Health/Check
+
+.PHONY: gcurl-local-1-tls
+gcurl-local-1-tls:
+	grpcurl \
+	  -proto api/v1/gitstafette.proto \
+	  -d '{"client_id": "me", "repository_id": "537845873", "last_received_event_id": 1}' \
+	  -cacert /mnt/d/Projects/homelab-rpi/certs/ca.pem \
+	  -cert /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
+	  -key /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem \
+	  localhost:50051 \
+	  gitstafette.v1.Gitstafette.FetchWebhookEvents
+
 .PHONY: server-1
 server-1:
 	go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051 --grpcHealthPort 50051

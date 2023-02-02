@@ -4,6 +4,9 @@ Git Webhook Relay demo app
 
 ## TODO
 
+* server holds connection longer than six "ticks" -> seems solved?
+* clear relayed webhooks after some time -> set relayed time
+* GCR uses HMAC
 * CI/CD In Kubernetes
   * Build with Tekton / CloudNative BuildPacks
   * generate SBOM/SPDX
@@ -12,14 +15,17 @@ Git Webhook Relay demo app
 * OpenTracing metrics
 * Host server in Google Cloud Run
   * use personal domain
-* Expose State with GraphQL
-  * with authentication
+  * Add GRPC healthcheck for GCR in Grafana Dashboard
 * set Kubernetes security
   * SecurityContext: https://snyk.io/blog/10-kubernetes-security-context-settings-you-should-understand/
   * Seccomp profiles: https://itnext.io/seccomp-in-kubernetes-part-i-7-things-you-should-know-before-you-even-start-97502ad6b6d6
     * https://www.pulumi.com/resources/kubernetes-seccomp-profiles/
   * Secrity Admission: https://kubernetes.io/blog/2022/08/25/pod-security-admission-stable/
   * Network policies: https://kubernetes.io/docs/concepts/services-networking/network-policies/
+* Expose State with GraphQL
+  * with authentication
+  * Gitstafette Explorer?
+* track relay status per client
 * CI/CD In Kubernetes
   * Scan with Snyk?
   * Testcontainers?
@@ -33,6 +39,7 @@ Git Webhook Relay demo app
 * Clients in multiple languages?
   * Java (20, spring boot 3, native?)
   * Rust: https://blog.ediri.io/creating-a-microservice-in-rust-using-grpc?s=31
+
 
 ### HMAC Support
 
@@ -80,21 +87,47 @@ grpcurl \
   -proto api/v1/gitstafette.proto \
   -d '{"client_id": "me", "repository_id": "537845873", "last_received_event_id": 1}' \
   localhost:50051 \
-  Gitstafette.FetchWebhookEvents
+  gitstafette.v1.Gitstafette.FetchWebhookEvents
 ```
 
 * running server with TLS
 
 ```shell
 grpcurl \                                                                                                                               ─╯
-  -insecure \
   -proto api/v1/gitstafette.proto \
   -d '{"client_id": "me", "repository_id": "537845873", "last_received_event_id": 1}' \
   localhost:50051 \
-  Gitstafette.FetchWebhookEvents
+  gitstafette.v1.Gitstafette.FetchWebhookEvents
+```
+
+```shell
+grpcurl \
+  -proto api/v1/gitstafette.proto \
+  -d '{"client_id": "me", "repository_id": "537845873", "last_received_event_id": 1}' \
+  -cacert /mnt/d/Projects/homelab-rpi/certs/ca.pem \
+  -cert /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
+  -key /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem \
+  localhost:50051 \
+  gitstafette.v1.Gitstafette.FetchWebhookEvents 
 ```
 
 ### GRPC HealthCheck
+
+* When insecure
+  ```shell
+  grpc-health-probe -addr=localhost:50051
+  ```
+
+* When secure
+  ```shell
+  grpc-health-probe -addr=localhost:50051 \
+      -tls \
+      -tls-ca-cert /mnt/d/Projects/homelab-rpi/certs/ca.pem \
+      -tls-client-cert /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
+      -tls-client-key /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem
+  ```
+
+
 
 * https://projectcontour.io/guides/grpc/
 * https://github.com/projectcontour/yages

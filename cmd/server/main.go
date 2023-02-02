@@ -100,6 +100,8 @@ func main() {
 	echoServer := initializeEchoServer(relayConfig, *port, *webhookHMAC)
 	log.Printf("Started http server on: %s, grpc server on: %s, and grpc health server on: %s\n", *port, *grpcPort, *grpcHealthPort)
 
+	go relay.CleanupRelayedEvents(serviceContext)
+
 	// Wait for interrupt signal to gracefully shut down the config with a timeout of 10 seconds.
 	// Use a buffered channel to avoid missing signals as recommended for signal.Notify
 	quit := make(chan os.Signal, 1)
@@ -268,6 +270,7 @@ func updateRelayStatus(events []*api.WebhookEvent, repositoryId string) {
 		for _, cachedEvent := range cachedEvents {
 			if cachedEvent.ID == eventId {
 				cachedEvent.IsRelayed = true
+				cachedEvent.TimeRelayed = time.Now()
 			}
 		}
 	}

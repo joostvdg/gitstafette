@@ -101,3 +101,7 @@ func (r *redisStore) CountEventsForRepository(repositoryId string) int {
 	}
 	return int(numberOfItems)
 }
+
+func (r *redisStore) Remove(repositoryId string, event *api.WebhookEventInternal) bool {
+	return false
+}

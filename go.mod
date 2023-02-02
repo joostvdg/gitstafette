@@ -1,6 +1,6 @@
 module github.com/joostvdg/gitstafette
 
-go 1.18
+go 1.19
 
 require github.com/labstack/echo/v4 v4.9.0
 
@@ -8,6 +8,8 @@ require (
 	github.com/go-resty/resty/v2 v2.7.0
 	google.golang.org/protobuf v1.28.1
 )
+
+require golang.org/x/exp v0.0.0-20230202163644-54bba9f4231b
 
 require google.golang.org/grpc v1.50.1
 

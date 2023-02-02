@@ -27,6 +27,7 @@ var Repositories RepositoryWatcher
 
 type EventStore interface {
 	Store(repositoryId string, event *api.WebhookEventInternal) bool
+	Remove(repositoryId string, event *api.WebhookEventInternal) bool
 	RetrieveEventsForRepository(repositoryId string) []*api.WebhookEventInternal
 	CountEventsForRepository(repositoryId string) int
 	IsConnected() bool
@@ -91,11 +92,11 @@ func InternalEvent(targetRepositoryID string, eventBodyBytes []byte, headers htt
 
 	eventBody := bytes.NewBuffer(eventBodyBytes).String()
 	webhookEvent := &api.WebhookEventInternal{
-		ID:        deliveryId,
-		IsRelayed: false,
-		Timestamp: time.Now(),
-		Headers:   webhookEventHeaders,
-		EventBody: eventBody,
+		ID:           deliveryId,
+		IsRelayed:    false,
+		TimeReceived: time.Now(),
+		Headers:      webhookEventHeaders,
+		EventBody:    eventBody,
 	}
 
 	return Store.Store(targetRepositoryID, webhookEvent), nil

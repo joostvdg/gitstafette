@@ -9,11 +9,12 @@ import (
 const DeliveryIdHeader = "X-Github-Delivery"
 
 type WebhookEventInternal struct {
-	ID        string               `json:"id"`
-	IsRelayed bool                 `json:"isRelayed"`
-	Timestamp time.Time            `json:"timestamp"`
-	Headers   []WebhookEventHeader `json:"headers"`
-	EventBody string               `json:"eventBody"`
+	ID           string               `json:"id"`
+	IsRelayed    bool                 `json:"isRelayed"`
+	TimeRelayed  time.Time            `json:"relayedTime"`
+	TimeReceived time.Time            `json:"receivedTime"`
+	Headers      []WebhookEventHeader `json:"headers"`
+	EventBody    string               `json:"eventBody"`
 }
 
 type WebhookEventHeader struct {
@@ -42,11 +43,11 @@ func ExternalToInternalEvent(event *WebhookEvent) *WebhookEventInternal {
 	log.Printf("webhookEventHeaders: %v\n", webhookEventHeaders)
 	eventBody := bytes.NewBuffer(event.Body).String()
 	return &WebhookEventInternal{
-		ID:        deliveryId,
-		IsRelayed: false,
-		Timestamp: time.Now(),
-		Headers:   webhookEventHeaders,
-		EventBody: eventBody,
+		ID:           deliveryId,
+		IsRelayed:    false,
+		TimeReceived: time.Now(),
+		Headers:      webhookEventHeaders,
+		EventBody:    eventBody,
 	}
 }
 

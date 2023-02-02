@@ -201,30 +201,6 @@ func RelayHealthCheck(serviceContext *gcontext.ServiceContext) {
 }
 
 func doGrpcHealthcheck(serviceContext *gcontext.ServiceContext) (bool, error) {
-	//ctx, cancel := context.WithCancel(context.Background())
-	//defer cancel()
-	//flConnTimeout := time.Second * 5
-	//flAddr := serviceContext.Relay.Endpoint.String()
-	//dialCtx, dialCancel := context.WithTimeout(ctx, flConnTimeout)
-	//defer dialCancel()
-	//opts := []grpc.DialOption{
-	//	grpc.WithUserAgent("gitstafette"),
-	//	grpc.WithBlock(),
-	//	grpc.WithTransportCredentials(insecure.NewCredentials()),
-	//}
-	//conn, err := grpc.DialContext(dialCtx, flAddr, opts...)
-	//if err != nil {
-	//	if err == context.DeadlineExceeded {
-	//		log.Printf("timeout: failed to connect service %q within %v", flAddr, flConnTimeout)
-	//	} else {
-	//		log.Printf("error: failed to connect service at %q: %+v", flAddr, err)
-	//	}
-	//}
-	//defer conn.Close()
-	//flRPCTimeout := time.Second * 5
-	//rpcCtx, rpcCancel := context.WithTimeout(ctx, flRPCTimeout)
-	//defer rpcCancel()
-
 	systemRoots, err := x509.SystemCertPool()
 	if err != nil {
 		log.Printf("cannot load root CA certs: %v", err)
@@ -293,4 +269,30 @@ func doHttpHealthcheck(relayEndpoint *url.URL, repositoryId string) (bool, error
 	// TODO: set behind debug flag
 	//fmt.Printf("Response: %v\n", response)
 	return response.IsSuccess(), nil
+}
+
+func CleanupRelayedEvents(serviceContext *gcontext.ServiceContext) {
+	ctx := serviceContext.Context
+	clock := time.NewTicker(5 * time.Second)
+	timeAfterWhichWeCleanup := time.Minute * 2
+	for {
+		select {
+		case <-clock.C:
+			repoIds := cache.Repositories.Repositories
+			for _, repositoryId := range repoIds {
+				cachedEvents := cache.Store.RetrieveEventsForRepository(repositoryId)
+				for _, cachedEvent := range cachedEvents {
+					relayTime := cachedEvent.TimeRelayed.Add(timeAfterWhichWeCleanup)
+					if cachedEvent.IsRelayed && time.Now().After(relayTime) {
+						log.Printf("Event (%v::%v) was relayed %s ago, removing",
+							repositoryId, cachedEvent.ID, time.Since(cachedEvent.TimeRelayed).Round(time.Second))
+						cache.Store.Remove(repositoryId, cachedEvent)
+					}
+				}
+			}
+		case <-ctx.Done(): // Activated when ctx.Done() closes
+			fmt.Println("Closing CleanupRelayedEvents")
+			return
+		}
+	}
 }

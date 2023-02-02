@@ -26,6 +26,7 @@ Git Webhook Relay demo app
   * with authentication
   * Gitstafette Explorer?
 * track relay status per client
+* use Redis in GCR
 * CI/CD In Kubernetes
   * Scan with Snyk?
   * Testcontainers?

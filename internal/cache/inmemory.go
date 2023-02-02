@@ -2,6 +2,7 @@ package cache
 
 import (
 	api "github.com/joostvdg/gitstafette/api/v1"
+	"golang.org/x/exp/slices"
 	"log"
 	"sync"
 )
@@ -60,4 +61,21 @@ func (i *inMemoryStore) CountEventsForRepository(repositoryId string) int {
 
 func (i *inMemoryStore) IsConnected() bool {
 	return true
+}
+
+func (i *inMemoryStore) Remove(repositoryId string, event *api.WebhookEventInternal) bool {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	events := i.events[repositoryId]
+	indexToRemove := slices.Index(events, event)
+	updatedEvents := removeElementByIndex(events, indexToRemove)
+	i.events[repositoryId] = updatedEvents
+	return true
+}
+
+// removes element while preserving order
+// copied from here: https://golangprojectstructure.com/removing-elements-from-slice-array/
+// TODO: do we need to preserve order?
+func removeElementByIndex[T any](slice []T, index int) []T {
+	return append(slice[:index], slice[index+1:]...)
 }

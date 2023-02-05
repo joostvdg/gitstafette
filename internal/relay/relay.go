@@ -59,7 +59,6 @@ func eventHeadersToHTTPHeaders(eventHeaders []v1.WebhookEventHeader) http.Header
 
 // HTTPRelay testing the relay functionality
 func HTTPRelay(event *v1.WebhookEventInternal, relayEndpoint *url.URL) {
-	log.Printf("Doing HTTPRelay\n")
 	client := resty.New()
 	// TODO: handle this based on secure/insecure and TLS config
 	tlsConfig := &tls.Config{
@@ -70,11 +69,13 @@ func HTTPRelay(event *v1.WebhookEventInternal, relayEndpoint *url.URL) {
 	request.Header = eventHeadersToHTTPHeaders(event.Headers)
 	response, err := request.Post(relayEndpoint.String())
 	if err != nil {
-		log.Printf("Encountered an error when relaying: %v\n", err)
+		log.Printf("Encountered an error when relaying {event: %v, endpoint: %v}: %v\n",
+			event.ID, relayEndpoint, err)
 		log.Printf("Request: %v\n", request)
 		log.Printf("Request Headers: %v\n", request.Header)
 	} else {
-		log.Printf("Response (%v): %v\n", response.StatusCode(), response)
+		log.Printf("Valid Relay Response (%v) - {event: %v, endpoint: %v}: %v\n", response.StatusCode(),
+			event.ID, relayEndpoint, response)
 	}
 
 }

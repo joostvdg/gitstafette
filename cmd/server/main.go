@@ -259,8 +259,6 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 
 	durationSeconds := request.GetDurationSecs()
 	finish := time.Now().Add(time.Second * time.Duration(durationSeconds))
-	log.Printf("durationSeconds: %v", durationSeconds)
-	log.Printf("finish: %v", finish)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

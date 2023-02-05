@@ -1,9 +1,6 @@
 package v1
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"github.com/getsentry/sentry-go"
 	sentryecho "github.com/getsentry/sentry-go/echo"
@@ -45,7 +42,7 @@ func HandleGitHubPost(ctx echo.Context) error {
 		if len(headers[SignatureHeader]) > 0 && headers[SignatureHeader][0] != "" {
 			digestHeader = headers[SignatureHeader][0]
 		}
-		err := validateMessage(webContext.WebhookHMAC, digestHeader, messagePayload)
+		err := ValidateMessage(webContext.WebhookHMAC, digestHeader, messagePayload)
 		if err != nil {
 			message := fmt.Sprintf("Ran into an error validating the message digest: %v\n", err)
 			log.Printf(message)
@@ -87,24 +84,4 @@ func HandleGitHubPost(ctx echo.Context) error {
 		return ctx.String(http.StatusCreated, "Repository event cached")
 	}
 	return ctx.String(http.StatusNoContent, "Repository event accepted but is already cached")
-}
-
-func validateMessage(token string, givenSha string, payload []byte) error {
-	if givenSha == "" {
-		return fmt.Errorf("no sha checksum provided")
-	}
-
-	h := hmac.New(sha256.New, []byte(token))
-	_, err := h.Write(payload)
-	if err != nil {
-		return err
-	}
-
-	computedSha := "sha256=" + hex.EncodeToString(h.Sum(nil))
-	log.Printf("GivenSha: %v, Calculated Sha: %v", givenSha, computedSha)
-
-	if computedSha != givenSha {
-		return fmt.Errorf("sha checksums did not match")
-	}
-	return nil
 }

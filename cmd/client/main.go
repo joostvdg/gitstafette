@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	api "github.com/joostvdg/gitstafette/api/v1"
+	v1 "github.com/joostvdg/gitstafette/internal/api/v1"
 	"github.com/joostvdg/gitstafette/internal/cache"
 	"github.com/joostvdg/gitstafette/internal/config"
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
@@ -55,6 +56,7 @@ func main() {
 	clientId := flag.String("clientId", "gitstafette-client", "The id of the client to identify connections")
 	streamWindow := flag.Int("streamWindow", 180, "The time we spend streaming with the server, in seconds")
 	healthCheckPort := flag.String("healthCheckPort", "8080", "Port used for a http health check server, used for running in container environments")
+	webhookHMAC := flag.String("webhookHMAC", "", "The hmac token used to verify the webhook events")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -82,11 +84,12 @@ func main() {
 		log.Fatal("Invalid certificate configuration: ", err.Error())
 	}
 
-	grpcServerConfig := api.CreateConfig(*grpcServerHost, *grpcServerPort, *streamWindow, insecure, tlsConfig)
+	grpcServerConfig := api.CreateServerConfig(*grpcServerHost, *grpcServerPort, *streamWindow, insecure, tlsConfig)
+	grpcClientConfig := api.CreateClientConfig(*clientId, *repositoryId, *streamWindow, *webhookHMAC)
 
 	for {
-		stream := initializeWebhookEventStreamOrDie(*repositoryId, *clientId, grpcServerConfig, ctx)
-		err := handleWebhookEventStream(stream, *repositoryId, *streamWindow, ctx)
+		stream := initializeWebhookEventStreamOrDie(grpcClientConfig, grpcServerConfig, ctx)
+		err := handleWebhookEventStream(stream, grpcClientConfig, ctx)
 		if err != nil {
 			log.Fatalf("Error streaming from server: %v\n", err)
 		}
@@ -118,14 +121,14 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "OK\n")
 }
 
-func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, repositoryId string, durationSeconds int, ctx context.Context) error {
+func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, grpcClientConfig *api.GRPCClientConfig, ctx context.Context) error {
 	serverClosed := make(chan bool)
 	serverError := &ServerState{}
 	go func(serverResponse api.Gitstafette_FetchWebhookEventsClient, serverErrorState *ServerState) {
 
 		// because Google Cloud Run's Envoy only handles streams for up to X amount of seconds,
 		// 	we have to connect to the server for at most the durationSeconds
-		finish := time.Now().Add(time.Second * time.Duration(durationSeconds))
+		finish := time.Now().Add(time.Second * time.Duration(grpcClientConfig.StreamWindow))
 
 		for time.Now().Before(finish) {
 			select {
@@ -148,7 +151,14 @@ func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, r
 				log.Printf("Received %d WebhookEvents", len(response.WebhookEvents))
 				for _, event := range response.WebhookEvents {
 					log.Printf("InternalEvent: %d, body size: %d, number of headers:  %d\n", event.EventId, len(event.Body), len(event.Headers))
-					cache.Event(repositoryId, event)
+					eventIsValid := v1.ValidateEvent(grpcClientConfig.WebhookHMAC, event)
+					messageAddition := ""
+					if grpcClientConfig.WebhookHMAC != "" {
+						messageAddition = " against hmac token on digest header"
+					}
+					log.Printf("Event %v is validated"+messageAddition+", valid: %v",
+						event.EventId, eventIsValid)
+					cache.Event(grpcClientConfig.RepositoryId, event)
 				}
 			case <-ctx.Done(): // Activated when ctx.Done() closes
 				log.Println("Closing FetchWebhookEvents")
@@ -172,7 +182,7 @@ var kacp = keepalive.ClientParameters{
 	PermitWithoutStream: true,             // send pings even without active streams
 }
 
-func initializeWebhookEventStreamOrDie(repositoryId string, clientId string, serverConfig *api.GRPCServerConfig, ctx context.Context) api.Gitstafette_FetchWebhookEventsClient {
+func initializeWebhookEventStreamOrDie(grpcClientConfig *api.GRPCClientConfig, serverConfig *api.GRPCServerConfig, ctx context.Context) api.Gitstafette_FetchWebhookEventsClient {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithAuthority(serverConfig.Host))
 	opts = append(opts, grpc.WithKeepaliveParams(kacp))
@@ -206,8 +216,8 @@ func initializeWebhookEventStreamOrDie(repositoryId string, clientId string, ser
 
 	client := api.NewGitstafetteClient(conn)
 	request := &api.WebhookEventsRequest{
-		ClientId:            clientId,
-		RepositoryId:        repositoryId,
+		ClientId:            grpcClientConfig.ClientID,
+		RepositoryId:        grpcClientConfig.RepositoryId,
 		LastReceivedEventId: 0,
 		DurationSecs:        uint32(serverConfig.StreamWindow),
 	}

@@ -196,6 +196,7 @@ client-gcr-server-relay-jenkins:
 	--relayPort=443 \
 	--relayProtocol=https \
 	--relayInsecure=true \
+	--webhookHMAC=${GITSTAFETTE_HMAC} \
 	--clientId="test-local"
 
 go-build-server:
@@ -233,6 +234,7 @@ gdeploy: gpush
 		--args="--relayEnabled=true"\
 		--args="--relayHost=gitstafette-server-qad46fd4qq-ez.a.run.app"\
 		--args="--relayPort=443"
+		--args="--webhookHMAC=${GITSTAFETTE_HMAC}"
 
 	gcloud run deploy gitstafette-server \
 		--use-http2 \

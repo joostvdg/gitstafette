@@ -4,21 +4,18 @@ Git Webhook Relay demo app
 
 ## TODO
 
-* http relay response is not descriptive
-  * `2023/02/03 00:22:55 Doing HTTPRelay`
-  * `2023/02/03 00:22:55 Response (200):`
-* GCR uses HMAC
 * GCR GRPC Client < > Server use authentication
 * update Carvel package
   * update FluxCD config
 * CI/CD In Kubernetes
+  * deploy via Crossplane
+    * https://marketplace.upbound.io/providers/upbound/provider-gcp/v0.26.0/resources/cloudrun.gcp.upbound.io/Service/v1beta1
   * Build with Tekton / CloudNative BuildPacks
   * generate SBOM/SPDX
 * Add Sentry support for client
 * OpenTelemetry metrics
 * OpenTracing metrics
 * Host server in Google Cloud Run
-  * use personal domain
   * Add GRPC healthcheck for GCR in Grafana Dashboard
 * set Kubernetes security
   * SecurityContext: https://snyk.io/blog/10-kubernetes-security-context-settings-you-should-understand/

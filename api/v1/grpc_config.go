@@ -10,15 +10,17 @@ type GRPCServerConfig struct {
 	Port         string
 	StreamWindow int
 	Insecure     bool
+	OAuthToken   string
 	TLSConfig    *tls.Config
 }
 
-func CreateServerConfig(host string, port string, streamWindow int, insecure bool, tlsConfig *tls.Config) *GRPCServerConfig {
+func CreateServerConfig(host string, port string, streamWindow int, insecure bool, oauthToken string, tlsConfig *tls.Config) *GRPCServerConfig {
 	config := &GRPCServerConfig{
 		Host:         host,
 		Port:         port,
 		StreamWindow: streamWindow,
 		Insecure:     insecure,
+		OAuthToken:   oauthToken,
 		TLSConfig:    tlsConfig,
 	}
 

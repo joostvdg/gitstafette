@@ -12,9 +12,11 @@ import (
 	"github.com/joostvdg/gitstafette/internal/config"
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
 	"github.com/joostvdg/gitstafette/internal/relay"
+	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials/oauth"
 	"google.golang.org/grpc/keepalive"
 	"io"
 	"log"
@@ -29,6 +31,7 @@ import (
 // TODO do not close if we have not relayed our events yet!
 
 const requestInterval = time.Second * 5
+const envOauthToken = "OAUTH_TOKEN"
 
 type ServerState struct {
 	HasError     bool
@@ -79,12 +82,17 @@ func main() {
 		insecure = false
 	}
 
+	oauthToken, oauthOk := os.LookupEnv(envOauthToken)
+	if !oauthOk {
+		oauthToken = ""
+	}
+
 	tlsConfig, err := config.NewTLSConfig(*caFileLocation, *certFileLocation, *certKeyFileLocation, false)
 	if err != nil {
 		log.Fatal("Invalid certificate configuration: ", err.Error())
 	}
 
-	grpcServerConfig := api.CreateServerConfig(*grpcServerHost, *grpcServerPort, *streamWindow, insecure, tlsConfig)
+	grpcServerConfig := api.CreateServerConfig(*grpcServerHost, *grpcServerPort, *streamWindow, insecure, oauthToken, tlsConfig)
 	grpcClientConfig := api.CreateClientConfig(*clientId, *repositoryId, *streamWindow, *webhookHMAC)
 
 	for {
@@ -182,10 +190,15 @@ var kacp = keepalive.ClientParameters{
 	PermitWithoutStream: true,             // send pings even without active streams
 }
 
-func initializeWebhookEventStreamOrDie(grpcClientConfig *api.GRPCClientConfig, serverConfig *api.GRPCServerConfig, ctx context.Context) api.Gitstafette_FetchWebhookEventsClient {
+func initializeWebhookEventStreamOrDie(clientConfig *api.GRPCClientConfig, serverConfig *api.GRPCServerConfig, ctx context.Context) api.Gitstafette_FetchWebhookEventsClient {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithAuthority(serverConfig.Host))
 	opts = append(opts, grpc.WithKeepaliveParams(kacp))
+
+	if serverConfig.OAuthToken != "" {
+		rpcCreds := oauth.NewOauthAccess(&oauth2.Token{AccessToken: serverConfig.OAuthToken})
+		opts = append(opts, grpc.WithPerRPCCredentials(rpcCreds))
+	}
 
 	if serverConfig.Insecure {
 		log.Printf("Not using TLS for GRPC server connection (insecure set)")
@@ -216,8 +229,8 @@ func initializeWebhookEventStreamOrDie(grpcClientConfig *api.GRPCClientConfig, s
 
 	client := api.NewGitstafetteClient(conn)
 	request := &api.WebhookEventsRequest{
-		ClientId:            grpcClientConfig.ClientID,
-		RepositoryId:        grpcClientConfig.RepositoryId,
+		ClientId:            clientConfig.ClientID,
+		RepositoryId:        clientConfig.RepositoryId,
 		LastReceivedEventId: 0,
 		DurationSecs:        uint32(serverConfig.StreamWindow),
 	}

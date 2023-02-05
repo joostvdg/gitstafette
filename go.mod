@@ -11,9 +11,13 @@ require (
 
 require golang.org/x/exp v0.0.0-20230202163644-54bba9f4231b
 
-require google.golang.org/grpc v1.50.1
+require (
+	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
+	google.golang.org/grpc v1.50.1
+)
 
 require (
+	cloud.google.com/go v0.34.0 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/labstack/gommon v0.3.1 // indirect
@@ -27,6 +31,7 @@ require (
 	golang.org/x/sys v0.1.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/time v0.0.0-20220922220347-f3bd1da661af // indirect
+	google.golang.org/appengine v1.4.0 // indirect
 	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013 // indirect
 )
 

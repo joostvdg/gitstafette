@@ -14,14 +14,18 @@ import (
 	"github.com/joostvdg/gitstafette/internal/relay"
 	"github.com/labstack/echo/v4/middleware"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -33,6 +37,7 @@ import (
 
 const (
 	envSentry        = "SENTRY_DSN"
+	envOauthToken    = "OAUTH_TOKEN"
 	responseInterval = time.Second * 3
 )
 
@@ -206,13 +211,14 @@ func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
 }
 
 func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *grpc.Server) *grpc.Server {
-	grpcServer := grpc.NewServer(grpc.KeepaliveEnforcementPolicy(kaep), grpc.KeepaliveParams(kasp))
+	grpcServer := grpc.NewServer(grpc.KeepaliveEnforcementPolicy(kaep), grpc.KeepaliveParams(kasp), grpc.StreamInterceptor(validateToken))
 	if tlsConfig != nil {
 		serverCredentials := credentials.NewTLS(tlsConfig)
 		grpcServer = grpc.NewServer(
 			grpc.KeepaliveEnforcementPolicy(kaep),
 			grpc.KeepaliveParams(kasp),
 			grpc.Creds(serverCredentials),
+			grpc.StreamInterceptor(validateToken),
 		)
 	}
 
@@ -237,6 +243,40 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *
 		log.Println("Shutdown GRPC gitstafette server")
 	}(grpcServer)
 	return grpcServer
+}
+
+func validateToken(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	log.Printf("Validating token for GRPC Stream Request")
+	oauthToken, oauthOk := os.LookupEnv(envOauthToken)
+	if oauthOk {
+		log.Printf("Validating token for GRPC Stream Request -> TOKEN FOUND")
+		md, ok := metadata.FromIncomingContext(ss.Context())
+		if !ok {
+			errorMessage := "missing metadata when validating OAuth Token"
+			log.Println(errorMessage)
+			return status.Error(codes.InvalidArgument, errorMessage)
+		}
+
+		if !valid(md["authorization"], oauthToken) {
+			errorMessage := "OAuth Token Missing Or Not Valid"
+			log.Println(errorMessage)
+			return status.Error(codes.Unauthenticated, errorMessage)
+		} else {
+			log.Printf("Validating token for GRPC Stream Request -> TOKEN VALID")
+		}
+	} else {
+		log.Println("Validating token for GRPC Stream Request -> TOKEN MISSING")
+	}
+	return handler(srv, ss)
+}
+
+func valid(authorization []string, expectedToken string) bool {
+	if len(authorization) < 1 {
+		return false
+	}
+	receivedToken := strings.TrimPrefix(authorization[0], "Bearer ")
+	// If you have more than one client then you will have to update this line.
+	return receivedToken == expectedToken
 }
 
 func (s server) WebhookEventPush(ignoredContext context.Context, request *api.WebhookEventPushRequest) (*api.WebhookEventPushResponse, error) {

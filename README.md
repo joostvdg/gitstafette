@@ -13,6 +13,9 @@ Git Webhook Relay demo app
   * `2023/02/03 00:22:55 Doing HTTPRelay`
   * `2023/02/03 00:22:55 Response (200):`
 * GCR uses HMAC
+* GCR GRPC Client < > Server use authentication
+* update Carvel package
+  * update FluxCD config
 * CI/CD In Kubernetes
   * Build with Tekton / CloudNative BuildPacks
   * generate SBOM/SPDX
@@ -40,7 +43,7 @@ Git Webhook Relay demo app
 * Kubernetes Controller + CR for generating clients
   * Metacontroller?
   * Operator?
-  * (GRPC) Server should support multiple clients
+  * (GRPC) Server should support multiple clients --> Does!
   * add CR to cluster for individual Repo's, then spawn a client
   * https://betterprogramming.pub/build-a-kubernetes-operator-in-10-minutes-11eec1492d30
 * Clients in multiple languages?

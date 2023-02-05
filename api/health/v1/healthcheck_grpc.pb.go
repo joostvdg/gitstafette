@@ -70,7 +70,7 @@ func (x *healthWatchClient) Recv() (*HealthCheckResponse, error) {
 	return m, nil
 }
 
-// HealthServer is the config API for Health service.
+// HealthServer is the server API for Health service.
 // All implementations must embed UnimplementedHealthServer
 // for forward compatibility
 type HealthServer interface {

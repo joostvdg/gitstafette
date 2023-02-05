@@ -6,18 +6,20 @@ import (
 )
 
 type GRPCServerConfig struct {
-	Host      string
-	Port      string
-	Insecure  bool
-	TLSConfig *tls.Config
+	Host         string
+	Port         string
+	StreamWindow int
+	Insecure     bool
+	TLSConfig    *tls.Config
 }
 
-func CreateConfig(host string, port string, insecure bool, tlsConfig *tls.Config) *GRPCServerConfig {
+func CreateConfig(host string, port string, streamWindow int, insecure bool, tlsConfig *tls.Config) *GRPCServerConfig {
 	config := &GRPCServerConfig{
-		Host:      host,
-		Port:      port,
-		Insecure:  insecure,
-		TLSConfig: tlsConfig,
+		Host:         host,
+		Port:         port,
+		StreamWindow: streamWindow,
+		Insecure:     insecure,
+		TLSConfig:    tlsConfig,
 	}
 
 	log.Printf("Constructed GRPC Server configuration: %v", *config)

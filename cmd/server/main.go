@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 	"log"
 	"net"
 	"net/http"
@@ -31,7 +32,8 @@ import (
 // TODO add flags for target for Relay
 
 const (
-	envSentry = "SENTRY_DSN"
+	envSentry        = "SENTRY_DSN"
+	responseInterval = time.Second * 3
 )
 
 type server struct {
@@ -172,8 +174,21 @@ func initializeEchoServer(relayConfig *api.RelayConfig, port string, webhookHMAC
 	return e
 }
 
+var kaep = keepalive.EnforcementPolicy{
+	MinTime:             5 * time.Second, // If a client pings more than once every 5 seconds, terminate the connection
+	PermitWithoutStream: true,            // Allow pings even when there are no active streams
+}
+
+var kasp = keepalive.ServerParameters{
+	MaxConnectionIdle:     15 * time.Second, // If a client is idle for 15 seconds, send a GOAWAY
+	MaxConnectionAge:      30 * time.Second, // If any connection is alive for more than 30 seconds, send a GOAWAY
+	MaxConnectionAgeGrace: 5 * time.Second,  // Allow 5 seconds for pending RPCs to complete before forcibly closing connections
+	Time:                  5 * time.Second,  // Ping the client if it is idle for 5 seconds to ensure the connection is still active
+	Timeout:               1 * time.Second,  // Wait 1 second for the ping ack before assuming the connection is dead
+}
+
 func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.KeepaliveEnforcementPolicy(kaep), grpc.KeepaliveParams(kasp))
 
 	go func(s *grpc.Server) {
 		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
@@ -191,10 +206,14 @@ func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
 }
 
 func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *grpc.Server) *grpc.Server {
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.KeepaliveEnforcementPolicy(kaep), grpc.KeepaliveParams(kasp))
 	if tlsConfig != nil {
 		serverCredentials := credentials.NewTLS(tlsConfig)
-		grpcServer = grpc.NewServer(grpc.Creds(serverCredentials))
+		grpcServer = grpc.NewServer(
+			grpc.KeepaliveEnforcementPolicy(kaep),
+			grpc.KeepaliveParams(kasp),
+			grpc.Creds(serverCredentials),
+		)
 	}
 
 	go func(s *grpc.Server) {
@@ -237,12 +256,18 @@ func (s server) WebhookEventPush(ignoredContext context.Context, request *api.We
 
 func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gitstafette_FetchWebhookEventsServer) error {
 	log.Printf("Relaying webhook events for repository %s", request.RepositoryId)
+
+	durationSeconds := request.GetDurationSecs()
+	finish := time.Now().Add(time.Second * time.Duration(durationSeconds))
+	log.Printf("durationSeconds: %v", durationSeconds)
+	log.Printf("finish: %v", finish)
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	clock := time.NewTicker(5 * time.Second)
-	for {
+
+	for time.Now().Before(finish) {
 		select {
-		case <-clock.C:
+		case <-time.After(responseInterval):
 			events, err := retrieveCachedEventsForRepository(request.RepositoryId)
 
 			// TODO properly handleerror
@@ -253,14 +278,23 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 				WebhookEvents: events,
 			}
 			log.Printf("Send %v events to client (%v) for repo %v", len(events), request.ClientId, request.RepositoryId)
-			srv.Send(response)
-			updateRelayStatus(events, request.RepositoryId)
 
+			if err := srv.Send(response); err != nil {
+				log.Printf("Error sending stream: %v\n", err)
+				return err
+			}
+
+			updateRelayStatus(events, request.RepositoryId)
+		case <-srv.Context().Done(): // Activated when ctx.Done() closes
+			log.Printf("Closing FetchWebhookEvents (client context %s closed)", request.ClientId)
+			return nil
 		case <-ctx.Done(): // Activated when ctx.Done() closes
-			log.Println("Closing FetchWebhookEvents")
+			log.Println("Closing FetchWebhookEvents (main context closed)")
 			return nil
 		}
 	}
+	log.Printf("Reached %v, so closed context %s", finish, request.ClientId)
+	return nil
 }
 
 func updateRelayStatus(events []*api.WebhookEvent, repositoryId string) {

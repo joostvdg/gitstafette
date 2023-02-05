@@ -9,6 +9,13 @@ service Gitstafette {
   rpc WebhookEventPush (WebhookEventPushRequest) returns (WebhookEventPushResponse) {}
 }
 
+message WebhookEventsRequest {
+  string client_id = 1;
+  string repository_id = 2;
+  uint64 last_received_event_id = 3;
+  uint32 duration_secs = 4;
+}
+
 message WebhookEventPushResponse {
   string response_code = 1;
   string response_description = 2;
@@ -19,12 +26,6 @@ message WebhookEventPushRequest {
   string cliend_id = 1;
   string repository_id = 2;
   WebhookEvent webhook_event = 3;
-}
-
-message WebhookEventsRequest {
-  string client_id = 1;
-  string repository_id = 2;
-  uint64 last_received_event_id = 3;
 }
 
 message WebhookEventsResponse {

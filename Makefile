@@ -60,6 +60,14 @@ probe-1-tls:
 gcurl-gcr:
 	grpcurl \
 	  -proto api/health/v1/healthcheck.proto \
+	  -d '{"client_id": "local-grpcurl", "repository_id": "537845873", "last_received_event_id": 1}' \
+	  gitstafette-server-qad46fd4qq-ez.a.run.app:443 \
+	  gitstafette.v1.Gitstafette.FetchWebhookEvents
+
+.PHONY: gcurl-gcr-hc
+gcurl-gcr-hc:
+	grpcurl \
+	  -proto api/health/v1/healthcheck.proto \
 	  gitstafette-server-qad46fd4qq-ez.a.run.app:443 \
 	  grpc.health.v1.Health/Check
 
@@ -108,13 +116,28 @@ client-1:
 client-1-tls:
 	go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 \
 		--secure \
+		--streamWindow 10 \
+		--healthCheckPort=8080 \
+		--clientId="local-1" \
 		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
 		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
 		--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem
 
+.PHONY: client-2-tls
+client-2-tls:
+	go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 \
+		--secure \
+		--streamWindow 30 \
+		--healthCheckPort=8091 \
+		--clientId="local-2" \
+		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
+		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
+		--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem
+
+
 .PHONY: client-2
 client-2:
-	go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 --relayEndpoint http://localhost:1324/v1/github/
+	go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 --healthCheckPort=8081 --relayEndpoint http://localhost:1324/v1/github/
 
 .PHONY: client-3
 client-3:
@@ -138,7 +161,10 @@ client-cluster-receive-tls:
 
 .PHONY: client-gcr-receive
 client-gcr-receive:
-	go run cmd/client/main.go --repo 537845873 --server "gitstafette-server-qad46fd4qq-ez.a.run.app" --port 443 --secure
+	go run cmd/client/main.go \
+ 	--repo 537845873 \
+ 	--server "gitstafette-server-qad46fd4qq-ez.a.run.app" \
+ 	--port 443 --secure
 
 .PHONY: client-local-server-relay-jenkins
 client-local-server-relay-jenkins:
@@ -208,7 +234,7 @@ gdeploy: gpush
 		--args="--relayHost=gitstafette-server-qad46fd4qq-ez.a.run.app"\
 		--args="--relayPort=443"
 
-	gcloud beta run deploy gitstafette-server \
+	gcloud run deploy gitstafette-server \
 		--use-http2 \
 		--image=gcr.io/${PROJECT_ID}/${NAME}-server:${PACKAGE_VERSION} \
 		--memory=128Mi --max-instances=1 --timeout=30 --project=$(PROJECT_ID)\

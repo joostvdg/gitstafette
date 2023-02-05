@@ -5,7 +5,13 @@ Git Webhook Relay demo app
 ## TODO
 
 * server holds connection longer than six "ticks" -> seems solved?
-* clear relayed webhooks after some time -> set relayed time
+  * only on the GCR -> might be a GCR frontend thing?
+  * https://cloud.google.com/run/docs/triggering/grpc
+  * `Error resceiving stream: rpc error: code = Internal desc = server closed the stream without sending trailers`
+  * after 5 ticks
+* http relay response is not descriptive
+  * `2023/02/03 00:22:55 Doing HTTPRelay`
+  * `2023/02/03 00:22:55 Response (200):`
 * GCR uses HMAC
 * CI/CD In Kubernetes
   * Build with Tekton / CloudNative BuildPacks
@@ -77,6 +83,9 @@ grpc-health-probe -addr=localhost:7777
 
 * https://github.com/fullstorydev/grpcurl
 * https://github.com/grpc-ecosystem/grpc-cloud-run-example/tree/master/golang
+* https://github.com/grpc/grpc-go/blob/master/Documentation/keepalive.md
+* https://github.com/grpc/grpc-go/tree/master/examples/features/keepalive
+* https://github.com/GoogleCloudPlatform/golang-samples/tree/main/run/grpc-server-streaming
 
 ### Test GRPC
 

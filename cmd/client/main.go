@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 	"io"
 	"log"
 	"net"
@@ -25,6 +26,13 @@ import (
 )
 
 // TODO do not close if we have not relayed our events yet!
+
+const requestInterval = time.Second * 5
+
+type ServerState struct {
+	HasError     bool
+	ErrorMessage string
+}
 
 func main() {
 	// TODO retrieve only events for specific repository
@@ -45,6 +53,8 @@ func main() {
 	certFileLocation := flag.String("certFileLocation", "", "The certificate file for trusting clients using TLS connection")
 	certKeyFileLocation := flag.String("certKeyFileLocation", "", "The certificate key file for trusting clients using TLS connection")
 	clientId := flag.String("clientId", "gitstafette-client", "The id of the client to identify connections")
+	streamWindow := flag.Int("streamWindow", 180, "The time we spend streaming with the server, in seconds")
+	healthCheckPort := flag.String("healthCheckPort", "8080", "Port used for a http health check server, used for running in container environments")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -60,6 +70,7 @@ func main() {
 	}
 	relay.InitiateRelay(serviceContext, *repositoryId)
 	cache.InitCache(*repositoryId, nil)
+	go initHealthCheckServer(ctx, *healthCheckPort)
 
 	insecure := *grpcServerInsecure
 	if *grpcServerSecure {
@@ -71,19 +82,24 @@ func main() {
 		log.Fatal("Invalid certificate configuration: ", err.Error())
 	}
 
-	grpcServerConfig := api.CreateConfig(*grpcServerHost, *grpcServerPort, insecure, tlsConfig)
-	stream := initializeWebhookEventStreamOrDie(*repositoryId, *clientId, grpcServerConfig, ctx)
+	grpcServerConfig := api.CreateConfig(*grpcServerHost, *grpcServerPort, *streamWindow, insecure, tlsConfig)
 
-	initHealthCheckServer(ctx)
-	handleWebhookEventStream(stream, *repositoryId, ctx)
+	for {
+		stream := initializeWebhookEventStreamOrDie(*repositoryId, *clientId, grpcServerConfig, ctx)
+		err := handleWebhookEventStream(stream, *repositoryId, *streamWindow, ctx)
+		if err != nil {
+			log.Fatalf("Error streaming from server: %v\n", err)
+		}
+	}
+
 	log.Printf("Closing client\n")
 }
 
-func initHealthCheckServer(ctx context.Context) {
+func initHealthCheckServer(ctx context.Context, port string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthCheck)
 	muxServer := &http.Server{
-		Addr:    ":8080",
+		Addr:    ":" + port,
 		Handler: mux,
 		BaseContext: func(l net.Listener) context.Context {
 			return ctx
@@ -102,22 +118,30 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "OK\n")
 }
 
-func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, repositoryId string, ctx context.Context) {
+func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, repositoryId string, durationSeconds int, ctx context.Context) error {
 	serverClosed := make(chan bool)
-	go func() {
-		clock := time.NewTicker(5 * time.Second)
-		for {
+	serverError := &ServerState{}
+	go func(serverResponse api.Gitstafette_FetchWebhookEventsClient, serverErrorState *ServerState) {
+
+		// because Google Cloud Run's Envoy only handles streams for up to X amount of seconds,
+		// 	we have to connect to the server for at most the durationSeconds
+		finish := time.Now().Add(time.Second * time.Duration(durationSeconds))
+
+		for time.Now().Before(finish) {
 			select {
-			case <-clock.C:
+			case <-time.After(requestInterval):
 				response, err := stream.Recv()
 				if err == io.EOF {
 					log.Println("Server send end of stream, closing")
 					serverClosed <- true // config has ended the stream
-					continue
+					return
 				}
 				if err != nil {
-					log.Printf("Error resceiving stream: %v\n", err) // is this recoverable or not?
+					errorMessage := fmt.Sprintf("Error resceiving stream: %v\n", err)
+					log.Println(errorMessage) // is this recoverable or not?
 					serverClosed <- true
+					serverErrorState.HasError = true
+					serverErrorState.ErrorMessage = errorMessage
 					return
 				}
 
@@ -132,13 +156,26 @@ func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, r
 				return
 			}
 		}
-	}()
+		serverClosed <- true
+	}(stream, serverError)
 	<-serverClosed
+	stream.Context().Done()
+	if serverError.HasError {
+		fmt.Errorf(serverError.ErrorMessage)
+	}
+	return nil
+}
+
+var kacp = keepalive.ClientParameters{
+	Time:                10 * time.Second, // send pings every 10 seconds if there is no activity
+	Timeout:             time.Second,      // wait 1 second for ping ack before considering the connection dead
+	PermitWithoutStream: true,             // send pings even without active streams
 }
 
 func initializeWebhookEventStreamOrDie(repositoryId string, clientId string, serverConfig *api.GRPCServerConfig, ctx context.Context) api.Gitstafette_FetchWebhookEventsClient {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithAuthority(serverConfig.Host))
+	opts = append(opts, grpc.WithKeepaliveParams(kacp))
 
 	if serverConfig.Insecure {
 		log.Printf("Not using TLS for GRPC server connection (insecure set)")
@@ -172,6 +209,7 @@ func initializeWebhookEventStreamOrDie(repositoryId string, clientId string, ser
 		ClientId:            clientId,
 		RepositoryId:        repositoryId,
 		LastReceivedEventId: 0,
+		DurationSecs:        uint32(serverConfig.StreamWindow),
 	}
 
 	stream, err := client.FetchWebhookEvents(ctx, request)

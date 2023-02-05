@@ -4,11 +4,6 @@ Git Webhook Relay demo app
 
 ## TODO
 
-* server holds connection longer than six "ticks" -> seems solved?
-  * only on the GCR -> might be a GCR frontend thing?
-  * https://cloud.google.com/run/docs/triggering/grpc
-  * `Error resceiving stream: rpc error: code = Internal desc = server closed the stream without sending trailers`
-  * after 5 ticks
 * http relay response is not descriptive
   * `2023/02/03 00:22:55 Doing HTTPRelay`
   * `2023/02/03 00:22:55 Response (200):`

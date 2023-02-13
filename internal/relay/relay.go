@@ -259,6 +259,7 @@ func doHttpHealthcheck(relayEndpoint *url.URL, repositoryId string) (bool, error
 		SetHeader("X-GitHub-Hook-Installation-Target-Type", "repository").
 		SetHeader("X-GitHub-Hook-Installation-Target-ID", repositoryId).
 		SetHeader("User-Agent", "Gitstafette").
+		SetHeader("Centent-Type", "application/json").
 		SetBody(`{"zen": "Design for failure.","repository": {"id": ` + repositoryId + `}}`).
 		Get(relayEndpoint.String())
 	// TODO: add POST option

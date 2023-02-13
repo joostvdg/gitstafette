@@ -4,25 +4,22 @@ Git Webhook Relay demo app
 
 ## TODO
 
-* GCR GRPC Client < > Server use authentication
-* update Carvel package
-  * update FluxCD config
 * CI/CD In Kubernetes
-  * deploy via Crossplane
-    * https://marketplace.upbound.io/providers/upbound/provider-gcp/v0.26.0/resources/cloudrun.gcp.upbound.io/Service/v1beta1
   * Build with Tekton / CloudNative BuildPacks
   * generate SBOM/SPDX
+  * deploy via Crossplane
+    * https://marketplace.upbound.io/providers/upbound/provider-gcp/v0.26.0/resources/cloudrun.gcp.upbound.io/Service/v1beta1
 * Add Sentry support for client
-* OpenTelemetry metrics
-* OpenTracing metrics
-* Host server in Google Cloud Run
-  * Add GRPC healthcheck for GCR in Grafana Dashboard
 * set Kubernetes security
   * SecurityContext: https://snyk.io/blog/10-kubernetes-security-context-settings-you-should-understand/
   * Seccomp profiles: https://itnext.io/seccomp-in-kubernetes-part-i-7-things-you-should-know-before-you-even-start-97502ad6b6d6
     * https://www.pulumi.com/resources/kubernetes-seccomp-profiles/
   * Secrity Admission: https://kubernetes.io/blog/2022/08/25/pod-security-admission-stable/
   * Network policies: https://kubernetes.io/docs/concepts/services-networking/network-policies/
+* OpenTelemetry metrics
+* OpenTracing metrics
+* Host server in Google Cloud Run
+  * Add GRPC healthcheck for GCR in Grafana Dashboard
 * Expose State with GraphQL
   * with authentication
   * Gitstafette Explorer?
@@ -81,6 +78,7 @@ grpc-health-probe -addr=localhost:7777
 * https://github.com/grpc/grpc-go/blob/master/Documentation/keepalive.md
 * https://github.com/grpc/grpc-go/tree/master/examples/features/keepalive
 * https://github.com/GoogleCloudPlatform/golang-samples/tree/main/run/grpc-server-streaming
+* http://www.inanzzz.com/index.php/post/cvjx/using-oauth-authentication-tokens-for-grpc-client-and-server-communications-in-golang
 
 ### Test GRPC
 
@@ -146,6 +144,15 @@ grpcurl \
 http POST http://localhost:1323/v1/github/ \
   X-Github-Delivery:d4049330-377e-11ed-9c2e-1ae286aab35f \
   X-Github-Hook-Installation-Target-Id:537845873 \
+  X-Github-Hook-Installation-Target-Type:repository \
+  X-GitHub-Event:push \
+  Test=True
+```
+
+```shell
+http POST http://localhost:1323/v1/github/ \
+  X-Github-Delivery:d4049330-377e-11ed-9c2e-1ae286aab35f \
+  X-Github-Hook-Installation-Target-Id:478599060 \
   X-Github-Hook-Installation-Target-Type:repository \
   X-GitHub-Event:push \
   Test=True

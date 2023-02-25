@@ -1,0 +1,97 @@
+services:
+  cert-copy:
+    image: bitnami/minideb:bullseye
+    restart: unless-stopped
+    command: ["./etc/copy_script.sh"]
+    depends_on:
+      - certbot
+    configs:
+      - source: copy_script
+        target: /etc/copy_script.sh
+    volumes:
+      - certbot-certificates:/etc/certbot/certificates:ro
+      - envoy-certificates:/etc/envoy/certificates:rw
+
+  certbot:
+    restart: unless-stopped
+    image: certbot/dns-route53:arm64v8-v2.3.0
+    command: [ "certonly", "-v", "--dns-route53", "-d", "events.gitstafette.joostvdg.net", "--email", "joostvdg@gmail.com", "--keep-until-expiring", "--agree-tos", "--non-interactive" ]
+    environment:
+      AWS_ACCESS_KEY_ID: ""
+      AWS_SECRET_ACCESS_KEY: ""
+    volumes:
+      - certbot-certificates:/etc/letsencrypt
+
+  envoy:
+    image: envoyproxy/envoy:v1.22.8
+    restart: unless-stopped
+    configs:
+      - source: envoy_proxy
+        target: /etc/envoy/envoy-proxy.yaml
+        uid: "103"
+        gid: "103"
+        mode: 0440
+    command: /usr/local/bin/envoy -c /etc/envoy/envoy-proxy.yaml -l debug
+    depends_on:
+      - cert-copy
+    volumes:
+      - type: volume
+        source: envoy-certificates
+        target: /etc/envoy/certificates
+    ports:
+      - 443:443
+      - 8081:8081
+      - 8082:8082
+
+  gitstafette-server:
+    restart: unless-stopped
+    init: true
+    image: ghcr.io/joostvdg/gitstafette/server:0.1.0-a2f1fc2
+    command: [
+      "--repositories=537845873,478599060",
+      "--grpcPort=50051",
+      "--port=1323",
+      "--grpcHealthPort=50051",
+      "--caFileLocation=/run/secrets/ca.cert",
+      "--certFileLocation=/run/secrets/server.cert",
+      "--certKeyFileLocation=/run/secrets/server.key"
+    ]
+    secrets:
+      - source: certificate
+        target: server.cert
+        uid: "103"
+        gid: "103"
+        mode: 0440
+      - source: certificate-key
+        target: server.key
+        uid: "103"
+        gid: "103"
+        mode: 0440
+      - source: ca
+        target: ca.cert
+        uid: "103"
+        gid: "103"
+        mode: 0440
+    ports:
+      - "8080:1323"
+      - "50051:50051"
+    environment:
+      OAUTH_TOKEN: "Q4HEg0ODGuie0wraqUn4"
+
+secrets:
+  certificate:
+    file: ./certs/server-local.pem
+  certificate-key:
+    file: ./certs/server-local-key.pem
+  ca:
+    file: ./certs/ca.pem
+
+configs:
+  envoy_proxy:
+    file: ./envoy/envoy.yaml
+  copy_script:
+    file: ./scripts/copy_certs.sh
+
+volumes:
+  certbot-certificates:
+  envoy-certificates:

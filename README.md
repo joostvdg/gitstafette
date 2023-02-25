@@ -4,27 +4,37 @@ Git Webhook Relay demo app
 
 ## TODO
 
-* CI/CD In Kubernetes
-  * Build with Tekton / CloudNative BuildPacks
-  * generate SBOM/SPDX
-  * deploy via Crossplane
-    * https://marketplace.upbound.io/providers/upbound/provider-gcp/v0.26.0/resources/cloudrun.gcp.upbound.io/Service/v1beta1
-* Add Sentry support for client
+* Alternative with AWS
+  * Status Page
+    * https://www.statuscake.com/statuscake-long-page/?a_aid=5eef0535df77b&a_bid=b0850064
+    * https://cronitor.io/pricing
+    * https://uptimerobot.com/pricing/
+    * https://www.checklyhq.com/pricing
+  * Web fronted by Envoy with AWS Cert
+    * like Keycloak on VMware laptop
 * set Kubernetes security
   * SecurityContext: https://snyk.io/blog/10-kubernetes-security-context-settings-you-should-understand/
   * Seccomp profiles: https://itnext.io/seccomp-in-kubernetes-part-i-7-things-you-should-know-before-you-even-start-97502ad6b6d6
     * https://www.pulumi.com/resources/kubernetes-seccomp-profiles/
   * Secrity Admission: https://kubernetes.io/blog/2022/08/25/pod-security-admission-stable/
   * Network policies: https://kubernetes.io/docs/concepts/services-networking/network-policies/
+* CI/CD In Kubernetes
+  * Build with Tekton / CloudNative BuildPacks
+  * generate SBOM/SPDX
+  * deploy via Crossplane
+    * https://marketplace.upbound.io/providers/upbound/provider-gcp/v0.26.0/resources/cloudrun.gcp.upbound.io/Service/v1beta1
+* Add Sentry support for client
 * OpenTelemetry metrics
 * OpenTracing metrics
-* Host server in Google Cloud Run
-  * Add GRPC healthcheck for GCR in Grafana Dashboard
 * Expose State with GraphQL
   * with authentication
   * Gitstafette Explorer?
 * track relay status per client
-* use Redis in GCR
+* alternative setup with CIVO cloud
+  * https://www.civo.com/docs/kubernetes/load-balancers
+* Fly.io
+  * https://fly.io/docs/reference/configuration/#services-ports-tls_options
+  * https://fly.io/docs/app-guides/multiple-processes/#maybe-you-don-t-need-multiple-processes
 * CI/CD In Kubernetes
   * Scan with Snyk?
   * Testcontainers?
@@ -239,3 +249,27 @@ spec:
     versionSelection:
       constraints: 0.0.0-08ddea6
 ```
+
+## Docker Compose
+
+* https://gruchalski.com/posts/2022-02-20-keycloak-1700-with-tls-behind-envoy/
+* https://github.com/envoyproxy/envoy/blob/main/examples/front-proxy/docker-compose.yaml
+* https://docs.docker.com/compose/compose-file/#command
+
+### Test Connection Via Envoy HTTPS
+
+```shell
+http POST https://localhost/v1/github/ \
+  Host:events.gitstafette.joostvdg.net \
+  X-Github-Delivery:d4049330-377e-11ed-9c2e-1ae286aab35f \
+  X-Github-Hook-Installation-Target-Id:537845873 \
+  X-Github-Hook-Installation-Target-Type:repository \
+  X-GitHub-Event:push \
+  Test=True --verify=false
+```
+
+## Running On AWS
+
+* https://cloud-images.ubuntu.com/locator/ec2/
+* https://developer.hashicorp.com/packer/tutorials/aws-get-started/aws-get-started-build-image
+* https://docs.docker.com/engine/install/ubuntu/

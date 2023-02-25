@@ -38,7 +38,7 @@ import (
 const (
 	envSentry        = "SENTRY_DSN"
 	envOauthToken    = "OAUTH_TOKEN"
-	responseInterval = time.Second * 3
+	responseInterval = time.Second * 30
 )
 
 type server struct {
@@ -303,9 +303,16 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	waitInterval := responseInterval
+	durationIntervalCalc := (durationSeconds / 3) - 5
+	if time.Duration(durationIntervalCalc) > waitInterval {
+		waitInterval = time.Duration(durationIntervalCalc)
+	}
+	log.Printf("Wait Interval is: %v", waitInterval)
+
 	for time.Now().Before(finish) {
 		select {
-		case <-time.After(responseInterval):
+		case <-time.After(waitInterval):
 			events, err := retrieveCachedEventsForRepository(request.RepositoryId)
 
 			// TODO properly handleerror

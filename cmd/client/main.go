@@ -30,7 +30,8 @@ import (
 
 // TODO do not close if we have not relayed our events yet!
 
-const requestInterval = time.Second * 5
+var requestInterval = time.Second * 45
+
 const envOauthToken = "OAUTH_TOKEN"
 
 type ServerState struct {

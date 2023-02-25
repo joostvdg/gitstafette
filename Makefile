@@ -44,6 +44,14 @@ compile:
 	--go-grpc_opt=paths=source_relative \
 	--proto_path=.
 
+.PHONY: sbom-server
+sbom-server:
+	cyclonedx-gomod app -json -output app-server.bom.json -licenses -main cmd/server .
+
+.PHONY: sbom-client
+sbom-client:
+	cyclonedx-gomod app -json -output app-client.bom.json -licenses -main cmd/client .
+
 .PHONY: probe-1
 probe-1:
 	grpc-health-probe -addr=localhost:50051
@@ -56,12 +64,16 @@ probe-1-tls:
 		-tls-client-cert /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
 		-tls-client-key /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem
 
-.PHONY: gcurl-gcr
-gcurl-gcr:
+.PHONY: probe-1-aws
+probe-1-aws:
+	grpc-health-probe -addr=events.gitstafette.joostvdg.net:50051 -tls
+
+.PHONY: gcurl-aws
+gcurl-aws:
 	grpcurl \
 	  -proto api/health/v1/healthcheck.proto \
 	  -d '{"client_id": "local-grpcurl", "repository_id": "537845873", "last_received_event_id": 1}' \
-	  gitstafette-server-qad46fd4qq-ez.a.run.app:443 \
+	  events.gitstafette.joostvdg.net:50051 \
 	  gitstafette.v1.Gitstafette.FetchWebhookEvents
 
 .PHONY: gcurl-gcr-hc
@@ -94,7 +106,7 @@ server-1-hmac:
 
 .PHONY: server-1-tls
 server-1-tls:
-	OAUTH_TOKEN="abc" go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051 --grpcHealthPort 50051 \
+	OAUTH_TOKEN="abc" go run cmd/server/main.go --repositories "537845873,478599060" --port 1323 --grpcPort 50051 --grpcHealthPort 50051 \
 		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
 		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/server-local.pem \
 		--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/server-local-key.pem
@@ -105,8 +117,17 @@ server-2:
 
 .PHONY: server-relay
 server-relay:
+	OAUTH_TOKEN="abc" go run cmd/server/main.go --repositories 537845873 --port 1325 --grpcPort 50053\
+		--relayEnabled=true --relayHost=127.0.0.1 --relayPort=50051 \
+		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
+		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/server-local.pem \
+		--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/server-local-key.pem
+
+.PHONY: server-relay-gcr
+server-relay-gcr:
 	go run cmd/server/main.go --repositories 537845873 --port 1325 --grpcPort 50053\
-		--relayEnabled=true --relayHost=127.0.0.1 --relayPort=50051
+		--relayEnabled=true --relayHost=gitstafette.joostvdg.net --relayPort=443
+
 
 .PHONY: client-1
 client-1:
@@ -114,14 +135,25 @@ client-1:
 
 .PHONY: client-1-tls
 client-1-tls:
-	OAUTH_TOKEN="abc" go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 \
+	OAUTH_TOKEN="Q4HEg0ODGuie0wraqUn4" go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 \
 		--secure \
-		--streamWindow 10 \
-		--healthCheckPort=8080 \
+		--streamWindow 100 \
+		--healthCheckPort=8081 \
 		--clientId="local-1" \
 		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
 		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
 		--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem
+
+client-aws:
+	OAUTH_TOKEN="Q4HEg0ODGuie0wraqUn4" go run cmd/client/main.go --repo 537845873 --server "events.gitstafette.joostvdg.net" --port 50051 \
+		--secure \
+		--streamWindow 3600 \
+		--healthCheckPort=8081 \
+		--clientId="local-1" \
+		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
+		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
+		--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem
+
 
 .PHONY: client-2-tls
 client-2-tls:
@@ -228,25 +260,25 @@ gpush: dxpush-server
 
 gdeploy: gpush
 	gcloud run deploy gitstafette-server-http --image=gcr.io/${PROJECT_ID}/${NAME}-server:${PACKAGE_VERSION} \
-		--memory=128Mi --max-instances=1 --timeout=30 --project=$(PROJECT_ID)\
+		--memory=128Mi --max-instances=1 --timeout=30 --project=${PROJECT_ID} \
 		--platform managed --allow-unauthenticated --region=europe-west4 \
-		--args="--repositories" --args="537845873"\
-		--args="--port=8080"\
-      	--args="--grpcPort=50051"\
-		--args="--relayEnabled=true"\
-		--args="--relayHost=gitstafette-server-qad46fd4qq-ez.a.run.app"\
-		--args="--relayPort=443"
+		--args="--repositories=537845873,478599060" \
+		--args="--port=8080" \
+		--args="--grpcPort=50051" \
+		--args="--relayEnabled=true" \
+		--args="--relayHost=gitstafette.joostvdg.net" \
+		--args="--relayPort=443" \
 		--args="--webhookHMAC=${GITSTAFETTE_HMAC}"
 
 	gcloud run deploy gitstafette-server \
 		--use-http2 \
 		--image=gcr.io/${PROJECT_ID}/${NAME}-server:${PACKAGE_VERSION} \
-		--memory=128Mi --max-instances=1 --timeout=30 --project=$(PROJECT_ID)\
+		--memory=128Mi --max-instances=1 --timeout=300 --project=${PROJECT_ID}\
 		--platform managed --allow-unauthenticated --region=europe-west4 \
-		--args="--repositories=537845873" \
+		--args="--repositories=537845873,478599060" \
 		--args="--port=1323"\
-      	--args="--grpcPort=8080" \
-      	--args="--grpcHealthPort=8080"
+		--args="--grpcPort=8080" \
+		--args="--grpcHealthPort=8080"
 
 helm-server:
 	helm upgrade gitstafette-server --install -n gitstafette --create-namespace ./helm/gitstafette-server --values ./helm/server-values.yaml

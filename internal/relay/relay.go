@@ -165,7 +165,7 @@ func RelayHealthCheck(serviceContext *gcontext.ServiceContext) {
 	}
 	ctx := serviceContext.Context
 	relay := serviceContext.Relay
-	clock := time.NewTicker(5 * time.Second)
+	clock := time.NewTicker(60 * time.Second)
 	for {
 		select {
 		case <-clock.C:

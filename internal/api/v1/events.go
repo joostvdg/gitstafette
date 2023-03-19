@@ -8,7 +8,7 @@ import (
 	v1 "github.com/joostvdg/gitstafette/api/v1"
 	"github.com/joostvdg/gitstafette/internal/cache"
 	"github.com/labstack/echo/v4"
-	"log"
+
 	"net/http"
 )
 
@@ -44,7 +44,7 @@ func ValidateEvent(hmac string, event *v1.WebhookEvent) bool {
 	}
 	validationError := ValidateMessage(hmac, digestHeader, event.Body)
 	if validationError != nil {
-		log.Printf("Could not validate received webhook event [%v]: %v", event.EventId, validationError)
+		sublogger.Warn().Msgf("Could not validate received webhook event [%v]: %v", event.EventId, validationError)
 	}
 	return true
 }
@@ -61,7 +61,7 @@ func ValidateMessage(token string, givenSha string, payload []byte) error {
 	}
 
 	computedSha := "sha256=" + hex.EncodeToString(h.Sum(nil))
-	log.Printf("GivenSha: %v, Calculated Sha: %v", givenSha, computedSha)
+	sublogger.Debug().Msgf("GivenSha: %v, Calculated Sha: %v", givenSha, computedSha)
 
 	if computedSha != givenSha {
 		return fmt.Errorf("sha checksums did not match")

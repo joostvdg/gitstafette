@@ -12,6 +12,8 @@ import (
 	"github.com/joostvdg/gitstafette/internal/config"
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
 	"github.com/joostvdg/gitstafette/internal/relay"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -19,7 +21,6 @@ import (
 	"google.golang.org/grpc/credentials/oauth"
 	"google.golang.org/grpc/keepalive"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -63,11 +64,14 @@ func main() {
 	webhookHMAC := flag.String("webhookHMAC", "", "The hmac token used to verify the webhook events")
 	flag.Parse()
 
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	sublogger := log.With().Str("component", "init").Logger()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPath, *relayHealthCheckPath, *relayPort, *relayProtocol, *relayInsecure)
 	if err != nil {
-		log.Fatal("Malformed URL: ", err.Error())
+		sublogger.Fatal().Err(err).Msg("Malformed Relay URL")
 	}
 
 	serviceContext := &gcontext.ServiceContext{
@@ -90,7 +94,7 @@ func main() {
 
 	tlsConfig, err := config.NewTLSConfig(*caFileLocation, *certFileLocation, *certKeyFileLocation, false)
 	if err != nil {
-		log.Fatal("Invalid certificate configuration: ", err.Error())
+		sublogger.Fatal().Err(err).Msg("Invalid certificate configuration")
 	}
 
 	grpcServerConfig := api.CreateServerConfig(*grpcServerHost, *grpcServerPort, *streamWindow, insecure, oauthToken, tlsConfig)
@@ -100,11 +104,11 @@ func main() {
 		stream := initializeWebhookEventStreamOrDie(grpcClientConfig, grpcServerConfig, ctx)
 		err := handleWebhookEventStream(stream, grpcClientConfig, ctx)
 		if err != nil {
-			log.Fatalf("Error streaming from server: %v\n", err)
+			sublogger.Fatal().Err(err).Msg("Error streaming from server")
 		}
 	}
 
-	log.Printf("Closing client\n")
+	sublogger.Info().Msg("Closing client")
 }
 
 func initHealthCheckServer(ctx context.Context, port string) {
@@ -121,7 +125,7 @@ func initHealthCheckServer(ctx context.Context, port string) {
 	go func() {
 		err := muxServer.ListenAndServe()
 		if err != nil {
-			log.Fatalf("Could not start health check service: %v", err)
+			log.Fatal().Err(err).Msg("Could not start health check service")
 		}
 	}()
 }
@@ -144,13 +148,13 @@ func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, g
 			case <-time.After(requestInterval):
 				response, err := stream.Recv()
 				if err == io.EOF {
-					log.Println("Server send end of stream, closing")
+					log.Info().Msg("Server send end of stream, closing")
 					serverClosed <- true // config has ended the stream
 					return
 				}
 				if err != nil {
-					errorMessage := fmt.Sprintf("Error resceiving stream: %v\n", err)
-					log.Println(errorMessage) // is this recoverable or not?
+					errorMessage := fmt.Sprintf("Error receiving stream: %v\n", err)
+					log.Warn().Msg(errorMessage) // is this recoverable or not?
 					serverClosed <- true
 					serverErrorState.HasError = true
 					serverErrorState.ErrorMessage = errorMessage
@@ -159,18 +163,18 @@ func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, g
 
 				log.Printf("Received %d WebhookEvents", len(response.WebhookEvents))
 				for _, event := range response.WebhookEvents {
-					log.Printf("InternalEvent: %d, body size: %d, number of headers:  %d\n", event.EventId, len(event.Body), len(event.Headers))
+					log.Printf("[grpc] InternalEvent: %d, body size: %d, number of headers:  %d\n", event.EventId, len(event.Body), len(event.Headers))
 					eventIsValid := v1.ValidateEvent(grpcClientConfig.WebhookHMAC, event)
 					messageAddition := ""
 					if grpcClientConfig.WebhookHMAC != "" {
 						messageAddition = " against hmac token on digest header"
 					}
-					log.Printf("Event %v is validated"+messageAddition+", valid: %v",
+					log.Printf("[grpc] Event %v is validated"+messageAddition+", valid: %v",
 						event.EventId, eventIsValid)
 					cache.Event(grpcClientConfig.RepositoryId, event)
 				}
 			case <-ctx.Done(): // Activated when ctx.Done() closes
-				log.Println("Closing FetchWebhookEvents")
+				log.Info().Msg("[grpc] Closing FetchWebhookEvents")
 				serverClosed <- true
 				return
 			}
@@ -196,24 +200,26 @@ func initializeWebhookEventStreamOrDie(clientConfig *api.GRPCClientConfig, serve
 	opts = append(opts, grpc.WithAuthority(serverConfig.Host))
 	opts = append(opts, grpc.WithKeepaliveParams(kacp))
 
+	sublogger := log.With().Str("component", "grpc-init").Logger()
+
 	if serverConfig.OAuthToken != "" {
 		rpcCreds := oauth.NewOauthAccess(&oauth2.Token{AccessToken: serverConfig.OAuthToken})
 		opts = append(opts, grpc.WithPerRPCCredentials(rpcCreds))
 	}
 
 	if serverConfig.Insecure {
-		log.Printf("Not using TLS for GRPC server connection (insecure set)")
+		sublogger.Info().Msg("Not using TLS for GRPC server connection (insecure set)")
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	} else if serverConfig.TLSConfig.RootCAs != nil { // TODO verify if this is al that is required
-		log.Printf("Using provided TLS certificates for GRPC server connection (RootCA's set)")
+	} else if serverConfig.TLSConfig != nil && serverConfig.TLSConfig.RootCAs != nil { // TODO verify if this is al that is required
+		sublogger.Info().Msg("Using provided TLS certificates for GRPC server connection (RootCA's set)")
 		clientCreds := credentials.NewTLS(serverConfig.TLSConfig)
 		opts = append(opts, grpc.WithTransportCredentials(clientCreds))
 	} else {
-		log.Printf("Using default system TLS certificates for GRPC server connection (secure, but no RootCA)")
+		sublogger.Info().Msg("Using default system TLS certificates for GRPC server connection (secure, but no RootCA)")
 		// https://www.googlecloudcommunity.com/gc/Serverless/Unable-to-connect-to-Cloud-Run-gRPC-server/m-p/422280/highlight/true#M345
 		systemRoots, err := x509.SystemCertPool()
 		if err != nil {
-			log.Printf("cannot load root CA certs: %v", err)
+			sublogger.Warn().Err(err).Msg("cannot load root CA certs")
 		}
 		creds := credentials.NewTLS(&tls.Config{
 			RootCAs: systemRoots,
@@ -225,7 +231,7 @@ func initializeWebhookEventStreamOrDie(clientConfig *api.GRPCClientConfig, serve
 	conn, err := grpc.Dial(server, opts...)
 
 	if err != nil {
-		log.Fatalf("cannot connect to the config %s: %v\n", server, err)
+		sublogger.Fatal().Err(err).Str("server", server).Msg("cannot connect to the config")
 	}
 
 	client := api.NewGitstafetteClient(conn)
@@ -238,7 +244,7 @@ func initializeWebhookEventStreamOrDie(clientConfig *api.GRPCClientConfig, serve
 
 	stream, err := client.FetchWebhookEvents(ctx, request)
 	if err != nil {
-		log.Fatalf("could not open stream to %s: %v\n", server, err)
+		sublogger.Fatal().Err(err).Str("server", server).Msg("could not open stream")
 	}
 	return stream
 }

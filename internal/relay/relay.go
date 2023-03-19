@@ -1,21 +1,22 @@
 package relay
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"github.com/go-resty/resty/v2"
 	v1 "github.com/joostvdg/gitstafette/api/v1"
 	"github.com/joostvdg/gitstafette/internal/cache"
+	gcontext "github.com/joostvdg/gitstafette/internal/context"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
-	"context"
-	gcontext "github.com/joostvdg/gitstafette/internal/context"
-	"google.golang.org/grpc"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"log"
 	"net/http"
 	"net/url"
 	"time"
@@ -32,13 +33,19 @@ type Status struct {
 	TimeOfLastFailure           time.Time
 }
 
+var sublogger zerolog.Logger
+
+func init() {
+	sublogger = log.With().Str("component", "relay").Logger()
+}
+
 func InitiateRelay(serviceContext *gcontext.ServiceContext, repositoryId string) {
 	relayConfig := serviceContext.Relay
 	if relayConfig.Enabled {
 		go RelayHealthCheck(serviceContext)
 		go RelayCachedEvents(serviceContext, repositoryId)
 	} else {
-		log.Println("Relay is disabled")
+		sublogger.Info().Msg("Relay is disabled")
 	}
 }
 
@@ -69,12 +76,12 @@ func HTTPRelay(event *v1.WebhookEventInternal, relayEndpoint *url.URL) {
 	request.Header = eventHeadersToHTTPHeaders(event.Headers)
 	response, err := request.Post(relayEndpoint.String())
 	if err != nil {
-		log.Printf("Encountered an error when relaying {event: %v, endpoint: %v}: %v\n",
+		sublogger.Warn().Msgf("Encountered an error when relaying {event: %v, endpoint: %v}: %v\n",
 			event.ID, relayEndpoint, err)
-		log.Printf("Request: %v\n", request)
-		log.Printf("Request Headers: %v\n", request.Header)
+		sublogger.Warn().Msgf("Request: %v\n", request)
+		sublogger.Warn().Msgf("Request Headers: %v\n", request.Header)
 	} else {
-		log.Printf("Valid Relay Response (%v) - {event: %v, endpoint: %v}: %v\n", response.StatusCode(),
+		sublogger.Info().Msgf("[relay] Valid Relay Response (%v) - {event: %v, endpoint: %v}: %v\n", response.StatusCode(),
 			event.ID, relayEndpoint, response)
 	}
 
@@ -102,7 +109,7 @@ func RelayCachedEvents(serviceContext *gcontext.ServiceContext, repositoryId str
 				}
 			}
 		case <-ctx.Done(): // Activated when ctx.Done() closes
-			fmt.Println("Closing RelayCachedEvents")
+			sublogger.Info().Msg("Closing RelayCachedEvents")
 			return
 		}
 	}
@@ -111,7 +118,7 @@ func RelayCachedEvents(serviceContext *gcontext.ServiceContext, repositoryId str
 func GRPCRelay(internalEvent *v1.WebhookEventInternal, relay *v1.RelayConfig, repositoryId string) {
 	systemRoots, err := x509.SystemCertPool()
 	if err != nil {
-		log.Printf("cannot load root CA certs: %v", err)
+		sublogger.Warn().Err(err).Msg("cannot load root CA certs")
 	}
 	creds := credentials.NewTLS(&tls.Config{
 		RootCAs: systemRoots,
@@ -121,11 +128,13 @@ func GRPCRelay(internalEvent *v1.WebhookEventInternal, relay *v1.RelayConfig, re
 	opts = append(opts, grpc.WithTransportCredentials(creds))
 
 	server := fmt.Sprintf("%s:%s", relay.Host, relay.Port)
-	log.Printf("GRPCRelay to config: %s\n", server)
+	sublogger.Info().
+		Str("server", server).
+		Msg("[relay] GRPCRelay to config")
 	conn, err := grpc.Dial(server, opts...)
 
 	if err != nil {
-		log.Fatalf("cannot connect to the config %s: %v\n", server, err)
+		sublogger.Fatal().Err(err).Str("server", server).Msg("cannot connect to the config")
 	}
 
 	client := v1.NewGitstafetteClient(conn)
@@ -139,9 +148,9 @@ func GRPCRelay(internalEvent *v1.WebhookEventInternal, relay *v1.RelayConfig, re
 	ctx := context.Background()
 	response, err := client.WebhookEventPush(ctx, request)
 	if err != nil {
-		log.Fatalf("could not open stream: %v\n", err)
+		sublogger.Fatal().Err(err).Msg("could not open stream")
 	}
-	fmt.Printf("GRPC Push response: %v\n", response)
+	sublogger.Info().Msgf("GRPC Push response: %v\n", response)
 }
 
 /**
@@ -171,7 +180,7 @@ func RelayHealthCheck(serviceContext *gcontext.ServiceContext) {
 		case <-clock.C:
 			// TODO do healthcheck
 			repoIds := cache.Repositories.Repositories
-			log.Printf("We have %v repositories (%v)", len(repoIds), repoIds)
+			log.Printf("[relay] We have %v repositories (%v)", len(repoIds), repoIds)
 			status.TimeOfLastCheck = time.Now()
 			healthy := false
 			var err error
@@ -180,10 +189,10 @@ func RelayHealthCheck(serviceContext *gcontext.ServiceContext) {
 			} else if relay.Protocol == "http" || relay.Protocol == "https" {
 				healthy, err = doHttpHealthcheck(relay.HealthEndpoint, repoIds[0])
 				if err != nil {
-					fmt.Printf("Encountered an error doing healthcheck on relay: %v\n", err)
+					log.Printf("[relay] Encountered an error doing healthcheck on relay: %v\n", err)
 				}
 			} else {
-				fmt.Printf("Invalid relay protocol %s\n", relay.Protocol)
+				log.Printf("[relay] Invalid relay protocol %s\n", relay.Protocol)
 			}
 
 			if !healthy {
@@ -195,7 +204,7 @@ func RelayHealthCheck(serviceContext *gcontext.ServiceContext) {
 				status.CounterOfFailedHealthChecks = 0
 			}
 		case <-ctx.Done(): // Activated when ctx.Done() closes
-			fmt.Println("Closing RelayHealthCheck")
+			fmt.Println("[relay] Closing RelayHealthCheck")
 			return
 		}
 	}
@@ -204,7 +213,7 @@ func RelayHealthCheck(serviceContext *gcontext.ServiceContext) {
 func doGrpcHealthcheck(serviceContext *gcontext.ServiceContext) (bool, error) {
 	systemRoots, err := x509.SystemCertPool()
 	if err != nil {
-		log.Printf("cannot load root CA certs: %v", err)
+		sublogger.Info().Err(err).Msg("cannot load root CA certs")
 	}
 	creds := credentials.NewTLS(&tls.Config{
 		RootCAs: systemRoots,
@@ -219,7 +228,7 @@ func doGrpcHealthcheck(serviceContext *gcontext.ServiceContext) (bool, error) {
 	server := fmt.Sprintf("%s:%s", relayConfig.Host, relayConfig.Port)
 	conn, err := grpc.Dial(server, opts...)
 	if err != nil {
-		log.Fatalf("cannot connect to the config %s: %v\n", server, err)
+		sublogger.Fatal().Err(err).Str("server", server).Msg("cannot connect to the config")
 	}
 
 	client := healthpb.NewHealthClient(conn)
@@ -230,17 +239,17 @@ func doGrpcHealthcheck(serviceContext *gcontext.ServiceContext) (bool, error) {
 
 	if err != nil {
 		if stat, ok := status.FromError(err); ok && stat.Code() == codes.Unimplemented {
-			log.Printf("error: this config does not implement the grpc health protocol (grpc.health.v1.Health): %s\n", stat.Message())
+			sublogger.Warn().Msgf("this config does not implement the grpc health protocol (grpc.health.v1.Health): %s\n", stat.Message())
 		} else if stat, ok := status.FromError(err); ok && stat.Code() == codes.DeadlineExceeded {
-			log.Printf("timeout: health rpc did not complete within time\n")
+			sublogger.Warn().Msgf("timeout: health rpc did not complete within time")
 		} else {
-			log.Printf("error: health rpc failed: %+v", err)
+			sublogger.Warn().Err(err).Msg("grpc relay healthcheck failed")
 		}
 	}
 	if resp.GetStatus() != healthpb.HealthCheckResponse_SERVING {
-		log.Printf("service unhealthy (responded with %q)", resp.GetStatus().String())
+		sublogger.Warn().Str("status", resp.GetStatus().String()).Msg("grpc relay service unhealthy")
 	} else {
-		log.Printf("Response from healthcheck: %v", resp.GetStatus())
+		sublogger.Info().Str("status", resp.GetStatus().String()).Msg("grpc relay service ok")
 	}
 
 	return false, nil
@@ -248,7 +257,7 @@ func doGrpcHealthcheck(serviceContext *gcontext.ServiceContext) (bool, error) {
 
 // TODO verify healthcheck with Jenkins or something similar
 func doHttpHealthcheck(relayEndpoint *url.URL, repositoryId string) (bool, error) {
-	log.Printf("Doing healthcheck for relay %v (using repo %v)\n", relayEndpoint.String(), repositoryId)
+	sublogger.Info().Msgf("Doing healthcheck for relay %v (using repo %v)\n", relayEndpoint.String(), repositoryId)
 	client := resty.New()
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
@@ -265,7 +274,7 @@ func doHttpHealthcheck(relayEndpoint *url.URL, repositoryId string) (bool, error
 	// TODO: add POST option
 	//Post(relayEndpoint.String())
 	if err != nil {
-		log.Printf("Encountered an error when relaying: %v\n", err)
+		sublogger.Warn().Err(err).Msg("Encountered an error when relaying")
 		return false, err
 	}
 	// TODO: set behind debug flag
@@ -286,14 +295,14 @@ func CleanupRelayedEvents(serviceContext *gcontext.ServiceContext) {
 				for _, cachedEvent := range cachedEvents {
 					relayTime := cachedEvent.TimeRelayed.Add(timeAfterWhichWeCleanup)
 					if cachedEvent.IsRelayed && time.Now().After(relayTime) {
-						log.Printf("Event (%v::%v) was relayed %s ago, removing",
+						sublogger.Info().Msgf("Event (%v::%v) was relayed %s ago, removing",
 							repositoryId, cachedEvent.ID, time.Since(cachedEvent.TimeRelayed).Round(time.Second))
 						cache.Store.Remove(repositoryId, cachedEvent)
 					}
 				}
 			}
 		case <-ctx.Done(): // Activated when ctx.Done() closes
-			fmt.Println("Closing CleanupRelayedEvents")
+			sublogger.Info().Msg("Closing CleanupRelayedEvents")
 			return
 		}
 	}

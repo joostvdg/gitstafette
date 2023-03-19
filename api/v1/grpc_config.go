@@ -2,7 +2,7 @@ package gitstafette_v1
 
 import (
 	"crypto/tls"
-	"log"
+	"github.com/rs/zerolog/log"
 )
 
 type GRPCServerConfig struct {
@@ -24,7 +24,7 @@ func CreateServerConfig(host string, port string, streamWindow int, insecure boo
 		TLSConfig:    tlsConfig,
 	}
 
-	log.Printf("Constructed GRPC Server configuration: %v", *config)
+	log.Info().Msgf("Constructed GRPC Server configuration: %v", *config)
 	return config
 }
 
@@ -42,6 +42,6 @@ func CreateClientConfig(clientId string, repositoryId string, streamWindow int, 
 		StreamWindow: streamWindow,
 		WebhookHMAC:  webhookHMAC,
 	}
-	log.Printf("Constructed GRPC Client configuration: %v", *config)
+	log.Info().Msgf("Constructed GRPC Client configuration: %v", *config)
 	return config
 }

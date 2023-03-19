@@ -3,7 +3,6 @@ package cache
 import (
 	"bytes"
 	api "github.com/joostvdg/gitstafette/api/v1"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -35,7 +34,7 @@ type EventStore interface {
 
 func InitCache(repositoryIDs string, redisConfig *RedisConfig) []string {
 	if repositoryIDs == "" || len(repositoryIDs) <= 1 {
-		log.Fatal("Did not receive any RepositoryID to watch")
+		sublogger.Fatal().Msg("Did not receive any RepositoryID to watch")
 	}
 
 	var repoIds []string

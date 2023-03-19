@@ -8,7 +8,6 @@ import (
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
 	"github.com/labstack/echo/v4"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"time"
 )
@@ -26,7 +25,7 @@ func HandleGitHubPost(ctx echo.Context) error {
 	defer body.Close()
 	messagePayload, err := ioutil.ReadAll(body)
 	if err != nil {
-		fmt.Printf("Ran into an error parsing content (Assumed GitHub Post): %v\n", err)
+		sublogger.Warn().Err(err).Msg("Ran into an error parsing content (Assumed GitHub Post)")
 	}
 
 	headers := ctx.Request().Header
@@ -45,7 +44,7 @@ func HandleGitHubPost(ctx echo.Context) error {
 		err := ValidateMessage(webContext.WebhookHMAC, digestHeader, messagePayload)
 		if err != nil {
 			message := fmt.Sprintf("Ran into an error validating the message digest: %v\n", err)
-			log.Printf(message)
+			sublogger.Warn().Err(err).Msg(message)
 			if hub := sentryecho.GetHubFromContext(ctx); hub != nil {
 				hub.WithScope(func(scope *sentry.Scope) {
 					scope.SetExtra("SignatureHeader", digestHeader)
@@ -58,7 +57,7 @@ func HandleGitHubPost(ctx echo.Context) error {
 			return ctx.String(http.StatusBadRequest, message)
 		}
 	} else {
-		log.Printf("Warning: No HMAC set, ignoring digest")
+		sublogger.Warn().Msg("No HMAC set, ignoring digest")
 	}
 
 	targetRepositoryID := headers[TargetIdHeader][0]
@@ -68,7 +67,7 @@ func HandleGitHubPost(ctx echo.Context) error {
 		isStored, _ = cache.InternalEvent(targetRepositoryID, messagePayload, headers)
 	} else {
 		message := fmt.Sprintf("Target %v is not a watched repository", targetRepositoryID)
-		log.Printf(message)
+		sublogger.Warn().Msg(message)
 		if hub := sentryecho.GetHubFromContext(ctx); hub != nil {
 			hub.WithScope(func(scope *sentry.Scope) {
 				scope.SetExtra("targetRepositoryID", targetRepositoryID)

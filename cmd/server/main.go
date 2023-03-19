@@ -13,6 +13,9 @@ import (
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
 	"github.com/joostvdg/gitstafette/internal/relay"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/rs/zerolog"
+
+	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -20,7 +23,6 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -67,9 +69,11 @@ func main() {
 	webhookHMAC := flag.String("webhookHMAC", "", "The hmac token used to verify the webhook events")
 	flag.Parse()
 
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+
 	tlsConfig, err := config.NewTLSConfig(*caFileLocation, *certFileLocation, *certKeyFileLocation, true)
 	if err != nil {
-		log.Fatal("Invalid certificate configuration: ", err.Error())
+		log.Fatal().Err(err).Msg("Invalid certificate configuration")
 	}
 	redisConfig := &cache.RedisConfig{
 		Host:     *redisHost,
@@ -83,7 +87,7 @@ func main() {
 	defer stop()
 	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPath, *relayHealthCheckPath, *relayPort, *relayProtocol, *relayInsecure)
 	if err != nil {
-		log.Fatal("Malformed URL: ", err.Error())
+		log.Fatal().Err(err).Msg("Malformed URL")
 	}
 
 	serviceContext := &gcontext.ServiceContext{
@@ -116,18 +120,18 @@ func main() {
 	<-quit
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	log.Println("Shutting down Echo server")
+	log.Info().Msg("Shutting down Echo server")
 	if err := echoServer.Shutdown(ctx); err != nil {
 		echoServer.Logger.Fatal(err)
 	}
-	log.Println("Shutting down GRPC gitstafette server")
+	log.Info().Msg("Shutting down GRPC gitstafette server")
 	grpcServer.GracefulStop()
-	log.Println("Shutting down GRPC health server")
+	log.Info().Msg("Shutting down GRPC health server")
 	if *grpcHealthPort != *grpcPort {
 		grpcHealthServer.GracefulStop()
 	}
 	cache.PrepareForShutdown()
-	log.Printf("Shutting down!\n")
+	log.Info().Msg("Shutting down!\n")
 }
 
 func initSentry() {
@@ -198,14 +202,14 @@ func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
 	go func(s *grpc.Server) {
 		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
 		if err != nil {
-			log.Fatalf("failed to listen: %v", err)
+			log.Fatal().Err(err).Msg("failed to listen")
 		}
 
 		grpc_health_v1.RegisterHealthServer(s, &HealthCheckService{})
 		if err := s.Serve(grpcListener); err != nil {
-			log.Fatalf("failed to serve: %v", err)
+			log.Fatal().Err(err).Msg("failed to serve")
 		}
-		log.Println("Shutdown GRPC health server")
+		log.Info().Msg("Shutdown GRPC health server")
 	}(grpcServer)
 	return grpcServer
 }
@@ -225,47 +229,47 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *
 	go func(s *grpc.Server) {
 		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
 		if err != nil {
-			log.Fatalf("failed to listen: %v", err)
+			log.Fatal().Err(err).Msg("failed to listen")
 		}
 
 		log.Printf("Starting GRPC server")
 		api.RegisterGitstafetteServer(s, &server{})
 		if healthServer == nil {
-			log.Printf("GRPC HealthCheck server is empty, running service with normal GRPC server\n")
+			log.Info().Msg("GRPC HealthCheck server is empty, running service with normal GRPC server")
 			grpc_health_v1.RegisterHealthServer(s, &HealthCheckService{})
 		} else {
 			log.Printf("Running GRPC HealthCheck server standalone\n", s.GetServiceInfo())
 		}
 
 		if err := s.Serve(grpcListener); err != nil {
-			log.Fatalf("failed to serve: %v", err)
+			log.Fatal().Err(err).Msg("failed to serve")
 		}
-		log.Println("Shutdown GRPC gitstafette server")
+		log.Info().Msg("Shutdown GRPC gitstafette server")
 	}(grpcServer)
 	return grpcServer
 }
 
 func validateToken(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	log.Printf("Validating token for GRPC Stream Request")
+	log.Info().Msg("Validating token for GRPC Stream Request")
 	oauthToken, oauthOk := os.LookupEnv(envOauthToken)
 	if oauthOk {
 		log.Printf("Validating token for GRPC Stream Request -> TOKEN FOUND")
 		md, ok := metadata.FromIncomingContext(ss.Context())
 		if !ok {
 			errorMessage := "missing metadata when validating OAuth Token"
-			log.Println(errorMessage)
+			log.Warn().Msg(errorMessage)
 			return status.Error(codes.InvalidArgument, errorMessage)
 		}
 
 		if !valid(md["authorization"], oauthToken) {
 			errorMessage := "OAuth Token Missing Or Not Valid"
-			log.Println(errorMessage)
+			log.Warn().Msg(errorMessage)
 			return status.Error(codes.Unauthenticated, errorMessage)
 		} else {
 			log.Printf("Validating token for GRPC Stream Request -> TOKEN VALID")
 		}
 	} else {
-		log.Println("Validating token for GRPC Stream Request -> TOKEN MISSING")
+		log.Warn().Msg("Validating token for GRPC Stream Request -> TOKEN MISSING")
 	}
 	return handler(srv, ss)
 }
@@ -334,7 +338,7 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 			log.Printf("Closing FetchWebhookEvents (client context %s closed)", request.ClientId)
 			return nil
 		case <-ctx.Done(): // Activated when ctx.Done() closes
-			log.Println("Closing FetchWebhookEvents (main context closed)")
+			log.Info().Msg("Closing FetchWebhookEvents (main context closed)")
 			return nil
 		}
 	}

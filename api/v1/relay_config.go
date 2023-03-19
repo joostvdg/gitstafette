@@ -2,7 +2,7 @@ package gitstafette_v1
 
 import (
 	"fmt"
-	"log"
+	"github.com/rs/zerolog/log"
 	"net/url"
 )
 
@@ -21,20 +21,20 @@ func CreateRelayConfig(relayEnabled bool, relayHost string, relayPath string, re
 	relayEndpoint := fmt.Sprintf("%s://%s:%s%s", relayProtocol, relayHost, relayPort, relayPath)
 	relayEndpointURL, err := url.Parse(relayEndpoint)
 	if err != nil {
-		log.Fatal("Malformed URL: ", err.Error())
+		log.Fatal().Err(err).Msg("Malformed URL")
 		return nil, err
 	}
 
 	heatlhCheckEndpoint := fmt.Sprintf("%s://%s:%s%s", relayProtocol, relayHost, relayPort, relayHealthCheckPath)
 	heatlhCheckEndpointURL, err := url.Parse(heatlhCheckEndpoint)
 	if err != nil {
-		log.Fatal("Malformed URL: ", err.Error())
+		log.Fatal().Err(err).Msg("Malformed URL")
 		return nil, err
 	}
 
 	// TODO remove debug statement
-	log.Printf("Configured relay endpoint URL: %v\n", relayEndpointURL.String())
-	log.Printf("Configured relay healthcheck endpoint URL: %v\n", heatlhCheckEndpointURL.String())
+	log.Info().Msgf("Configured relay endpoint URL: %v\n", relayEndpointURL.String())
+	log.Info().Msgf("Configured relay healthcheck endpoint URL: %v\n", heatlhCheckEndpointURL.String())
 
 	return &RelayConfig{
 		Enabled:        relayEnabled,

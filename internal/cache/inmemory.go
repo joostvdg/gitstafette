@@ -3,7 +3,6 @@ package cache
 import (
 	api "github.com/joostvdg/gitstafette/api/v1"
 	"golang.org/x/exp/slices"
-	"log"
 	"sync"
 )
 
@@ -20,7 +19,7 @@ func NewInMemoryStore() *inMemoryStore {
 
 // TODO need a lock of some sort
 func (i *inMemoryStore) Store(repositoryId string, event *api.WebhookEventInternal) bool {
-	log.Printf("Claiming lock")
+	sublogger.Debug().Msg("Claiming lock")
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	events := i.events[repositoryId]
@@ -29,8 +28,7 @@ func (i *inMemoryStore) Store(repositoryId string, event *api.WebhookEventIntern
 	}
 	for _, storedEvent := range events {
 		if storedEvent.ID == event.ID {
-			log.Printf("Already stored this event, skipping. (repo: %v, event: %v)",
-				repositoryId, event.ID)
+			sublogger.Warn().Str("repo", repositoryId).Str("event", event.ID).Msg("Already stored this event, skipping")
 			return false
 		}
 	}
@@ -38,7 +36,7 @@ func (i *inMemoryStore) Store(repositoryId string, event *api.WebhookEventIntern
 	event.IsRelayed = false
 	events = append(events, event)
 	i.events[repositoryId] = events
-	log.Printf("Cached event for repository %v, currently holding %d events for the repository",
+	sublogger.Info().Msgf("Cached event for repository %v, currently holding %d events for the repository",
 		repositoryId, len(events))
 	return true
 }

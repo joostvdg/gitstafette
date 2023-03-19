@@ -4,8 +4,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"github.com/rs/zerolog/log"
 	"io/ioutil"
-	"log"
 )
 
 func NewTLSConfig(caFileLocation string, certificateFileLocation string, certificateKeyFileLocation string, isServer bool) (*tls.Config, error) {
@@ -22,7 +22,7 @@ func NewTLSConfig(caFileLocation string, certificateFileLocation string, certifi
 			certificateKeyFileLocation,
 		)
 	} else {
-		log.Printf("Did not find a certificate with a key, no TLS certs")
+		log.Warn().Msg("Did not find a certificate with a key, no TLS certs")
 	}
 
 	if caFileLocation != "" {
@@ -33,7 +33,7 @@ func NewTLSConfig(caFileLocation string, certificateFileLocation string, certifi
 
 		ca, err := x509.SystemCertPool()
 		if err != nil {
-			log.Printf("cannot load root CA certs: %v", err)
+			log.Warn().Err(err).Msg("cannot load root CA certs")
 		}
 		ok := ca.AppendCertsFromPEM([]byte(b))
 
@@ -49,13 +49,13 @@ func NewTLSConfig(caFileLocation string, certificateFileLocation string, certifi
 			tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 			// TODO: should we configure the config name?
 			tlsConfig.ServerName = "gitstafette-server"
-			log.Printf("Configuring TLS for Server")
+			log.Info().Msg("Configuring TLS for Server")
 		} else {
 			tlsConfig.RootCAs = ca
-			log.Printf("Configuring TLS for Client")
+			log.Info().Msg("Configuring TLS for Client")
 		}
 	} else {
-		log.Printf("Did not find a CA cert, no TLS RootCA set")
+		log.Warn().Msg("Did not find a CA cert, no TLS RootCA set")
 	}
 
 	return tlsConfig, err

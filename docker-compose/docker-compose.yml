@@ -76,7 +76,8 @@ services:
       - "8080:1323"
       - "50051:50051"
     environment:
-      OAUTH_TOKEN: "Q4HEg0ODGuie0wraqUn4"
+      OAUTH_TOKEN: ""
+      SENTRY_DSN: ""
 
 secrets:
   certificate:

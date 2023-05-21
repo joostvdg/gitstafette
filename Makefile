@@ -94,9 +94,23 @@ gcurl-local-1-tls:
 	  localhost:50051 \
 	  gitstafette.v1.Gitstafette.FetchWebhookEvents
 
+
+.PHONY: ghz-local-2
+ghz-local-2:
+	ghz --insecure \
+		--proto api/v1/gitstafette.proto \
+		--call gitstafette.v1.Gitstafette.FetchWebhookEvents \
+		--data '{"client_id": "me", "repository_id": "537845873", "last_received_event_id": 1}' \
+		localhost:50052
+
 .PHONY: server-1
 server-1:
-	go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051 --grpcHealthPort 50051
+	OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051 --grpcHealthPort 50051
+	#    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317;\
+	#    export OTEL_SERVICE_NAME=Server-1;\
+	#    export OTEL_RESOURCE_ATTRIBUTES="service.namespace=gitstafette,service.name=Server,service.instance.id=Server-1";\
+	#    export PUBLIC_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces;\
+
 
 .PHONY: server-1-hmac
 server-1-hmac:
@@ -106,7 +120,7 @@ server-1-hmac:
 
 .PHONY: server-1-tls
 server-1-tls:
-	OAUTH_TOKEN="abc" go run cmd/server/main.go --repositories "537845873,478599060" --port 1323 --grpcPort 50051 --grpcHealthPort 50051 \
+	OAUTH_TOKEN="Q4HEg0ODGuie0wraqUn4" go run cmd/server/main.go --repositories "537845873,478599060" --port 1323 --grpcPort 50051 --grpcHealthPort 50051 \
 		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
 		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/server-local.pem \
 		--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/server-local-key.pem
@@ -131,7 +145,11 @@ server-relay-gcr:
 
 .PHONY: client-1
 client-1:
-	go run cmd/client/main.go --repo 537845873 --server "localhost" --port 50051 --insecure=false
+	OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 go run cmd/client/main.go --repo 537845873 --server "localhost" --port 50051 --insecure=true
+
+    # export OTEL_SERVICE_NAME=Client-1;\
+    # export OTEL_RESOURCE_ATTRIBUTES="service.namespace=gitstafette,service.name=Client,service.instance.id=Client-1";\
+    # export PUBLIC_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces;\
 
 .PHONY: client-1-tls
 client-1-tls:
@@ -157,10 +175,10 @@ client-aws:
 
 .PHONY: client-2-tls
 client-2-tls:
-	OAUTH_TOKEN="abc" go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 \
+	OAUTH_TOKEN="Q4HEg0ODGuie0wraqUn4" go run cmd/client/main.go --repo 478599060 --server "127.0.0.1" --port 50051 \
 		--secure \
-		--streamWindow 30 \
-		--healthCheckPort=8091 \
+		--streamWindow 100 \
+		--healthCheckPort=8082 \
 		--clientId="local-2" \
 		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
 		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
@@ -181,11 +199,11 @@ client-cluster-send:
 
 .PHONY: client-cluster-receive
 client-cluster-receive:
-	go run cmd/client/main.go --repo 537845873 --server "lemon.fritz.box" --port 80 --insecure
+	go run cmd/client/main.go --repo 537845873 --server "gitstafette.home.lab" --port 443 --insecure
 
 .PHONY: client-cluster-receive-tls
 client-cluster-receive-tls:
-	go run cmd/client/main.go --repo 537845873 --server "lemon.fritz.box" --port 80 \
+	go run cmd/client/main.go --repo 583684693 --server "gitstafette.home.lab" --port 443 \
 		--secure \
 		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
 		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \

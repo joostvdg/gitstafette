@@ -6,13 +6,13 @@ resource "aws_route53_zone" "gistafette" {
   }
 }
 
-resource "aws_route53_record" "gistafette-ns" {
-  zone_id = aws_route53_zone.gistafette.zone_id
-  name    = "gitstafette.joostvdg.net"
-  type    = "NS"
-  ttl     = "30"
-  records = aws_route53_zone.gistafette.name_servers
-}
+#resource "aws_route53_record" "gistafette-ns" {
+#  zone_id = aws_route53_zone.gistafette.zone_id
+#  name    = "gitstafette.joostvdg.net"
+#  type    = "NS"
+#  ttl     = "30"
+#  records = aws_route53_zone.gistafette.name_servers
+#}
 
 resource "aws_route53_record" "events" {
   zone_id = aws_route53_zone.gistafette.zone_id

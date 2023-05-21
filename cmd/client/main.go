@@ -14,6 +14,16 @@ import (
 	"github.com/joostvdg/gitstafette/internal/relay"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/metric/global"
+	"go.opentelemetry.io/otel/propagation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdkresource "go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -25,6 +35,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -34,6 +45,11 @@ import (
 var requestInterval = time.Second * 45
 
 const envOauthToken = "OAUTH_TOKEN"
+
+var (
+	resource          *sdkresource.Resource
+	initResourcesOnce sync.Once
+)
 
 type ServerState struct {
 	HasError     bool
@@ -196,11 +212,27 @@ var kacp = keepalive.ClientParameters{
 }
 
 func initializeWebhookEventStreamOrDie(clientConfig *api.GRPCClientConfig, serverConfig *api.GRPCServerConfig, ctx context.Context) api.Gitstafette_FetchWebhookEventsClient {
+	sublogger := log.With().Str("component", "grpc-init").Logger()
+
+	tp := initTracerProvider(ctx)
+	defer func() {
+		if err := tp.Shutdown(ctx); err != nil {
+			sublogger.Fatal().Err(err).Msg("Tracer Provider Shutdown")
+		}
+	}()
+	mp := initMeterProvider(ctx)
+	defer func() {
+		if err := mp.Shutdown(ctx); err != nil {
+			sublogger.Fatal().Err(err).Msg("Error shutting down meter provider")
+		}
+	}()
+
+
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithAuthority(serverConfig.Host))
 	opts = append(opts, grpc.WithKeepaliveParams(kacp))
-
-	sublogger := log.With().Str("component", "grpc-init").Logger()
+	opts = append(opts, grpc.WithChainStreamInterceptor(otelgrpc.StreamClientInterceptor(), ClientStreamInterceptor))
+	opts = append(opts, grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()))
 
 	if serverConfig.OAuthToken != "" {
 		rpcCreds := oauth.NewOauthAccess(&oauth2.Token{AccessToken: serverConfig.OAuthToken})
@@ -248,3 +280,66 @@ func initializeWebhookEventStreamOrDie(clientConfig *api.GRPCClientConfig, serve
 	}
 	return stream
 }
+
+func initResource() *sdkresource.Resource {
+	initResourcesOnce.Do(func() {
+		extraResources, _ := sdkresource.New(
+			context.Background(),
+			sdkresource.WithOS(),
+			sdkresource.WithProcess(),
+			sdkresource.WithContainer(),
+			sdkresource.WithHost(),
+		)
+		resource, _ = sdkresource.Merge(
+			sdkresource.Default(),
+			extraResources,
+		)
+	})
+	return resource
+}
+
+func initTracerProvider(ctx context.Context) *sdktrace.TracerProvider {
+	exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithInsecure())
+	if err != nil {
+		log.Fatal().Err(err).Msg("OTLP Trace gRPC Creation failed")
+	}
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(initResource()),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	return tp
+}
+
+func initMeterProvider(ctx context.Context) *sdkmetric.MeterProvider {
+	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithInsecure())
+	if err != nil {
+		log.Fatal().Err(err).Msg("new otlp metric grpc exporter failed")
+	}
+
+	mp := sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
+		sdkmetric.WithResource(initResource()),
+	)
+	global.SetMeterProvider(mp)
+	return mp
+}
+
+func ClientStreamInterceptor(
+	ctx context.Context,
+	desc *grpc.StreamDesc,
+	cc *grpc.ClientConn,
+	method string,
+	streamer grpc.Streamer,
+	opts ...grpc.CallOption) (grpc.ClientStream, error) {
+
+	newCtx, span := otel.Tracer("Gitstafette-Client").Start(ctx, method)
+	s, err := streamer(newCtx, desc, cc, method, opts...)
+	if err != nil {
+		return nil, err
+	}
+	span.SetAttributes(attribute.String("grpc.stream.type", "client"))
+	return s, nil
+}
+

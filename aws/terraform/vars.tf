@@ -61,7 +61,7 @@ variable "linux_associate_public_ip_address" {
 variable "linux_root_volume_size" {
   type        = number
   description = "Size of root volume of Linux Server"
-  default     = 50
+  default     = 10
 }
 
 

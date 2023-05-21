@@ -11,25 +11,33 @@ import (
 	"github.com/joostvdg/gitstafette/internal/cache"
 	"github.com/joostvdg/gitstafette/internal/config"
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
+	grpc_internal "github.com/joostvdg/gitstafette/internal/grpc"
 	"github.com/joostvdg/gitstafette/internal/relay"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog"
+	"sync"
 
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/metric/global"
+	"go.opentelemetry.io/otel/propagation"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdkresource "go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	api "github.com/joostvdg/gitstafette/api/v1"
 	"github.com/labstack/echo/v4"
@@ -39,8 +47,12 @@ import (
 
 const (
 	envSentry        = "SENTRY_DSN"
-	envOauthToken    = "OAUTH_TOKEN"
 	responseInterval = time.Second * 30
+)
+
+var (
+	resource          *sdkresource.Resource
+	initResourcesOnce sync.Once
 )
 
 type server struct {
@@ -184,20 +196,20 @@ func initializeEchoServer(relayConfig *api.RelayConfig, port string, webhookHMAC
 }
 
 var kaep = keepalive.EnforcementPolicy{
-	MinTime:             5 * time.Second, // If a client pings more than once every 5 seconds, terminate the connection
+	MinTime:             3 * time.Second, // If a client pings more than once every 5 seconds, terminate the connection
 	PermitWithoutStream: true,            // Allow pings even when there are no active streams
 }
 
 var kasp = keepalive.ServerParameters{
 	MaxConnectionIdle:     15 * time.Second, // If a client is idle for 15 seconds, send a GOAWAY
-	MaxConnectionAge:      30 * time.Second, // If any connection is alive for more than 30 seconds, send a GOAWAY
+	MaxConnectionAge:      60 * time.Second, // If any connection is alive for more than 60 seconds, send a GOAWAY
 	MaxConnectionAgeGrace: 5 * time.Second,  // Allow 5 seconds for pending RPCs to complete before forcibly closing connections
 	Time:                  5 * time.Second,  // Ping the client if it is idle for 5 seconds to ensure the connection is still active
-	Timeout:               1 * time.Second,  // Wait 1 second for the ping ack before assuming the connection is dead
+	Timeout:               10 * time.Second,  // Wait 1 second for the ping ack before assuming the connection is dead
 }
 
 func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
-	grpcServer := grpc.NewServer(grpc.KeepaliveEnforcementPolicy(kaep), grpc.KeepaliveParams(kasp))
+	grpcServer := grpc.NewServer(grpc.KeepaliveEnforcementPolicy(kaep), grpc.KeepaliveParams(kasp), grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()))
 
 	go func(s *grpc.Server) {
 		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
@@ -215,14 +227,35 @@ func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
 }
 
 func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *grpc.Server) *grpc.Server {
-	grpcServer := grpc.NewServer(grpc.KeepaliveEnforcementPolicy(kaep), grpc.KeepaliveParams(kasp), grpc.StreamInterceptor(validateToken))
+	tp := initTracerProvider()
+	defer func() {
+		if err := tp.Shutdown(context.Background()); err != nil {
+			log.Fatal().Err(err).Msg("Tracer Provider Shutdown")
+		}
+	}()
+
+	mp := initMeterProvider()
+	defer func() {
+		if err := mp.Shutdown(context.Background()); err != nil {
+			log.Fatal().Err(err).Msg("Error shutting down meter provider")
+		}
+	}()
+
+	grpcServer := grpc.NewServer(
+		grpc.KeepaliveEnforcementPolicy(kaep),
+		grpc.KeepaliveParams(kasp),
+		grpc.ChainStreamInterceptor(grpc_internal.ValidateToken,grpc_internal.EventsServerStreamInterceptor,otelgrpc.StreamServerInterceptor()),
+		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+	)
+
 	if tlsConfig != nil {
 		serverCredentials := credentials.NewTLS(tlsConfig)
 		grpcServer = grpc.NewServer(
 			grpc.KeepaliveEnforcementPolicy(kaep),
 			grpc.KeepaliveParams(kasp),
 			grpc.Creds(serverCredentials),
-			grpc.StreamInterceptor(validateToken),
+			grpc.ChainStreamInterceptor(grpc_internal.ValidateToken, grpc_internal.EventsServerStreamInterceptor, otelgrpc.StreamServerInterceptor()),
+			grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
 		)
 	}
 
@@ -249,39 +282,7 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *
 	return grpcServer
 }
 
-func validateToken(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	log.Info().Msg("Validating token for GRPC Stream Request")
-	oauthToken, oauthOk := os.LookupEnv(envOauthToken)
-	if oauthOk {
-		log.Printf("Validating token for GRPC Stream Request -> TOKEN FOUND")
-		md, ok := metadata.FromIncomingContext(ss.Context())
-		if !ok {
-			errorMessage := "missing metadata when validating OAuth Token"
-			log.Warn().Msg(errorMessage)
-			return status.Error(codes.InvalidArgument, errorMessage)
-		}
 
-		if !valid(md["authorization"], oauthToken) {
-			errorMessage := "OAuth Token Missing Or Not Valid"
-			log.Warn().Msg(errorMessage)
-			return status.Error(codes.Unauthenticated, errorMessage)
-		} else {
-			log.Printf("Validating token for GRPC Stream Request -> TOKEN VALID")
-		}
-	} else {
-		log.Warn().Msg("Validating token for GRPC Stream Request -> TOKEN MISSING")
-	}
-	return handler(srv, ss)
-}
-
-func valid(authorization []string, expectedToken string) bool {
-	if len(authorization) < 1 {
-		return false
-	}
-	receivedToken := strings.TrimPrefix(authorization[0], "Bearer ")
-	// If you have more than one client then you will have to update this line.
-	return receivedToken == expectedToken
-}
 
 func (s server) WebhookEventPush(ignoredContext context.Context, request *api.WebhookEventPushRequest) (*api.WebhookEventPushResponse, error) {
 	response := &api.WebhookEventPushResponse{
@@ -317,6 +318,8 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 	for time.Now().Before(finish) {
 		select {
 		case <-time.After(waitInterval):
+			log.Printf("Fetching events for repo %v (with Span)", request.RepositoryId)
+			_, span := otel.Tracer("Server").Start(srv.Context() , "FetchWebhookEvents")
 			events, err := retrieveCachedEventsForRepository(request.RepositoryId)
 
 			// TODO properly handleerror
@@ -334,6 +337,8 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 			}
 
 			updateRelayStatus(events, request.RepositoryId)
+			log.Info().Msg("Closing Span")
+			span.End()
 		case <-srv.Context().Done(): // Activated when ctx.Done() closes
 			log.Printf("Closing FetchWebhookEvents (client context %s closed)", request.ClientId)
 			return nil
@@ -392,3 +397,54 @@ func (s *HealthCheckService) Watch(req *grpc_health_v1.HealthCheckRequest, serve
 		Status: grpc_health_v1.HealthCheckResponse_SERVING,
 	})
 }
+
+
+func initResource() *sdkresource.Resource {
+	initResourcesOnce.Do(func() {
+		extraResources, _ := sdkresource.New(
+			context.Background(),
+			sdkresource.WithOS(),
+			sdkresource.WithProcess(),
+			sdkresource.WithContainer(),
+			sdkresource.WithHost(),
+		)
+		resource, _ = sdkresource.Merge(
+			sdkresource.Default(),
+			extraResources,
+		)
+	})
+	return resource
+}
+
+func initTracerProvider() *sdktrace.TracerProvider {
+	ctx := context.Background()
+
+	exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithInsecure())
+	if err != nil {
+		log.Fatal().Err(err).Msg("OTLP Trace gRPC Creation failed")
+	}
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(initResource()),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	return tp
+}
+
+func initMeterProvider() *sdkmetric.MeterProvider {
+	ctx := context.Background()
+
+	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithInsecure())
+	if err != nil {
+		log.Fatal().Err(err).Msg("new otlp metric grpc exporter failed")
+	}
+
+	mp := sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
+		sdkmetric.WithResource(initResource()),
+	)
+	global.SetMeterProvider(mp)
+	return mp
+}
+

@@ -1,17 +1,12 @@
 # gitstafette
 
+![GitstafetteAWS](https://cronitor.io/badges/kauC1R/production/3yVCEN51c1McT7VDklAzqJqNrP8.svg)
+
 Git Webhook Relay demo app
 
 ## TODO
 
-* Alternative with AWS
-  * Status Page
-    * https://www.statuscake.com/statuscake-long-page/?a_aid=5eef0535df77b&a_bid=b0850064
-    * https://cronitor.io/pricing
-    * https://uptimerobot.com/pricing/
-    * https://www.checklyhq.com/pricing
-  * Web fronted by Envoy with AWS Cert
-    * like Keycloak on VMware laptop
+* add Sentry to Docker Compose AWS 
 * set Kubernetes security
   * SecurityContext: https://snyk.io/blog/10-kubernetes-security-context-settings-you-should-understand/
   * Seccomp profiles: https://itnext.io/seccomp-in-kubernetes-part-i-7-things-you-should-know-before-you-even-start-97502ad6b6d6
@@ -48,7 +43,18 @@ Git Webhook Relay demo app
 * Clients in multiple languages?
   * Java (20, spring boot 3, native?)
   * Rust: https://blog.ediri.io/creating-a-microservice-in-rust-using-grpc?s=31
-
+* GRPC Optimizations
+  * Multiplexing
+  * Multiple Servers with a LB (Client, separate server?)
+  * Compression
+  * Deadlines + Cancellation + Timeouts
+  * Metadata (Authentication, tracing, ...)
+  * Tracing via Interceptors?
+  * Business Metrics via Interceptors
+  * Do OAUTH 2 via Interceptors/per RPC
+  * JWT or Oauth2 via a server (Keycloak, Vault?)
+  * Gateway for the Webhook listening
+    * https://grpc-ecosystem.github.io/grpc-gateway/docs/tutorials/introduction/
 
 ### HMAC Support
 
@@ -268,8 +274,22 @@ http POST https://localhost/v1/github/ \
   Test=True --verify=false
 ```
 
+## GRPC Debugging
+
+```shell
+export GRPC_TRACE=all
+export GRPC_VERBOSITY=INFO
+export GRPC_GO_LOG_VERBOSITY_LEVEL=1
+export GRPC_GO_LOG_SEVERITY_LEVEL=info
+```
+
 ## Running On AWS
 
 * https://cloud-images.ubuntu.com/locator/ec2/
 * https://developer.hashicorp.com/packer/tutorials/aws-get-started/aws-get-started-build-image
 * https://docs.docker.com/engine/install/ubuntu/
+
+## Testing
+
+* GOMock
+* https://ghz.sh/docs/install

@@ -105,7 +105,7 @@ ghz-local-2:
 
 .PHONY: server-1
 server-1:
-	OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051 --grpcHealthPort 50051
+	go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051 --grpcHealthPort 50051
 	#    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317;\
 	#    export OTEL_SERVICE_NAME=Server-1;\
 	#    export OTEL_RESOURCE_ATTRIBUTES="service.namespace=gitstafette,service.name=Server,service.instance.id=Server-1";\
@@ -145,7 +145,7 @@ server-relay-gcr:
 
 .PHONY: client-1
 client-1:
-	OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 go run cmd/client/main.go --repo 537845873 --server "localhost" --port 50051 --insecure=true
+	go run cmd/client/main.go --repo 537845873 --server "localhost" --port 50051 --insecure=true
 
     # export OTEL_SERVICE_NAME=Client-1;\
     # export OTEL_RESOURCE_ATTRIBUTES="service.namespace=gitstafette,service.name=Client,service.instance.id=Client-1";\

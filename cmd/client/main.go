@@ -113,6 +113,8 @@ func main() {
 		sublogger.Fatal().Err(err).Msg("Invalid certificate configuration")
 	}
 
+	tp := initTracerProvider(ctx)
+	mp := initMeterProvider(ctx)
 	grpcServerConfig := api.CreateServerConfig(*grpcServerHost, *grpcServerPort, *streamWindow, insecure, oauthToken, tlsConfig)
 	grpcClientConfig := api.CreateClientConfig(*clientId, *repositoryId, *streamWindow, *webhookHMAC)
 
@@ -125,6 +127,8 @@ func main() {
 	}
 
 	sublogger.Info().Msg("Closing client")
+	tp.ForceFlush(ctx)
+	mp.ForceFlush(ctx)
 }
 
 func initHealthCheckServer(ctx context.Context, port string) {
@@ -159,9 +163,11 @@ func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, g
 		// 	we have to connect to the server for at most the durationSeconds
 		finish := time.Now().Add(time.Second * time.Duration(grpcClientConfig.StreamWindow))
 
+		_, span := otel.Tracer("Gitstafette-Client").Start(ctx, "handleWebhookEventStream")
 		for time.Now().Before(finish) {
 			select {
 			case <-time.After(requestInterval):
+				span.AddEvent("requesting stream")
 				response, err := stream.Recv()
 				if err == io.EOF {
 					log.Info().Msg("Server send end of stream, closing")
@@ -179,6 +185,7 @@ func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, g
 
 				log.Printf("Received %d WebhookEvents", len(response.WebhookEvents))
 				for _, event := range response.WebhookEvents {
+					span.AddEvent("received event")
 					log.Printf("[grpc] InternalEvent: %d, body size: %d, number of headers:  %d\n", event.EventId, len(event.Body), len(event.Headers))
 					eventIsValid := v1.ValidateEvent(grpcClientConfig.WebhookHMAC, event)
 					messageAddition := ""
@@ -190,11 +197,14 @@ func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, g
 					cache.Event(grpcClientConfig.RepositoryId, event)
 				}
 			case <-ctx.Done(): // Activated when ctx.Done() closes
+				span.AddEvent("context done")
 				log.Info().Msg("[grpc] Closing FetchWebhookEvents")
 				serverClosed <- true
 				return
 			}
 		}
+		span.AddEvent("finish")
+		span.End()
 		serverClosed <- true
 	}(stream, serverError)
 	<-serverClosed
@@ -213,20 +223,6 @@ var kacp = keepalive.ClientParameters{
 
 func initializeWebhookEventStreamOrDie(clientConfig *api.GRPCClientConfig, serverConfig *api.GRPCServerConfig, ctx context.Context) api.Gitstafette_FetchWebhookEventsClient {
 	sublogger := log.With().Str("component", "grpc-init").Logger()
-
-	tp := initTracerProvider(ctx)
-	defer func() {
-		if err := tp.Shutdown(ctx); err != nil {
-			sublogger.Fatal().Err(err).Msg("Tracer Provider Shutdown")
-		}
-	}()
-	mp := initMeterProvider(ctx)
-	defer func() {
-		if err := mp.Shutdown(ctx); err != nil {
-			sublogger.Fatal().Err(err).Msg("Error shutting down meter provider")
-		}
-	}()
-
 
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithAuthority(serverConfig.Host))
@@ -299,7 +295,7 @@ func initResource() *sdkresource.Resource {
 }
 
 func initTracerProvider(ctx context.Context) *sdktrace.TracerProvider {
-	exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithInsecure())
+	exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithInsecure(), otlptracegrpc.WithEndpoint("localhost:4317"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("OTLP Trace gRPC Creation failed")
 	}
@@ -313,7 +309,7 @@ func initTracerProvider(ctx context.Context) *sdktrace.TracerProvider {
 }
 
 func initMeterProvider(ctx context.Context) *sdkmetric.MeterProvider {
-	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithInsecure())
+	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithInsecure(), otlpmetricgrpc.WithEndpoint("localhost:4317"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("new otlp metric grpc exporter failed")
 	}

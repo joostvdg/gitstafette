@@ -38,15 +38,17 @@ func NewWrappedStream(s grpc.ServerStream) grpc.ServerStream {
 func EventsServerStreamInterceptor(srv interface{}, serverStream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	ctx := serverStream.Context()
 	_, span := otel.Tracer("Gitstafette-Server").Start(ctx, info.FullMethod)
-
+	log.Printf("====== [EventsServerStreamInterceptor] Send a message (Type: %T) at %s", srv, time.Now().Format(time.RFC3339))
 	span.SetAttributes(attribute.String("grpc.service", info.FullMethod))
 	span.SetAttributes(attribute.String("grpc.stream.type", "server"))
 
-	err := handler(srv, NewWrappedStream(serverStream))
-	if err != nil {
-		log.Printf("RPC failed with error %v", err)
-	}
-	return err
+	//err := handler(srv, NewWrappedStream(serverStream))
+	//if err != nil {
+	//	log.Printf("RPC failed with error %v", err)
+	//}
+	//return err
+	span.End( )
+	return handler(srv, serverStream)
 }
 
 func ValidateToken(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {

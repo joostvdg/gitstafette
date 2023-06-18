@@ -9,8 +9,6 @@ require (
 	google.golang.org/protobuf v1.30.0
 )
 
-require golang.org/x/exp v0.0.0-20230202163644-54bba9f4231b
-
 require (
 	github.com/rs/zerolog v1.29.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.41.1
@@ -20,6 +18,7 @@ require (
 	go.opentelemetry.io/otel/metric v0.38.1
 	go.opentelemetry.io/otel/sdk v1.15.1
 	go.opentelemetry.io/otel/sdk/metric v0.38.1
+	go.opentelemetry.io/otel/trace v1.15.1
 	golang.org/x/oauth2 v0.4.0
 	google.golang.org/grpc v1.54.0
 )
@@ -42,7 +41,6 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.15.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric v0.38.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.15.1 // indirect
-	go.opentelemetry.io/otel/trace v1.15.1 // indirect
 	go.opentelemetry.io/proto/otlp v0.19.0 // indirect
 	golang.org/x/crypto v0.0.0-20220926161630-eccd6366d1be // indirect
 	golang.org/x/net v0.9.0 // indirect

@@ -293,3 +293,56 @@ export GRPC_GO_LOG_SEVERITY_LEVEL=info
 
 * GOMock
 * https://ghz.sh/docs/install
+
+## OTEL Tracing
+
+### GUAR
+
+* single span containing both Server and Client
+* client tag
+
+```shell
+internal.span.format	proto
+net.peer.name	localhost
+net.peer.port	50051
+otel.library.name	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc
+otel.library.version	semver:0.41.1
+rpc.grpc.status_code	0
+rpc.method	searchOrders
+rpc.service	ecommerce.OrderManagement
+rpc.system	grpc
+span.kind	client
+```
+
+* server tags
+
+```shell
+internal.span.format	proto
+net.sock.peer.addr	127.0.0.1
+net.sock.peer.port	38842
+otel.library.name	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc
+otel.library.version	semver:0.41.1
+rpc.grpc.status_code	0
+rpc.method	searchOrders
+rpc.service	ecommerce.OrderManagement
+rpc.system	grpc
+span.kind	server
+```
+
+### Gitstafette
+
+* client tags
+
+```shell
+internal.span.format	proto
+otel.library.name	Gitstafette-Client
+span.kind	internal
+```
+
+* server tags
+
+```shell
+internal.span.format	proto
+otel.library.name	Server
+span.kind	internal
+```

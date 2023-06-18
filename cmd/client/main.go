@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"flag"
-	"fmt"
+
 	api "github.com/joostvdg/gitstafette/api/v1"
 	v1 "github.com/joostvdg/gitstafette/internal/api/v1"
 	"github.com/joostvdg/gitstafette/internal/cache"
@@ -24,6 +24,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdkresource "go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -42,7 +43,7 @@ import (
 
 // TODO do not close if we have not relayed our events yet!
 
-var requestInterval = time.Second * 45
+var requestInterval = time.Second * 5
 
 const envOauthToken = "OAUTH_TOKEN"
 
@@ -113,22 +114,35 @@ func main() {
 		sublogger.Fatal().Err(err).Msg("Invalid certificate configuration")
 	}
 
-	tp := initTracerProvider(ctx)
-	mp := initMeterProvider(ctx)
+	initTracerProvider(context.Background())
+	initMeterProvider(context.Background())
 	grpcServerConfig := api.CreateServerConfig(*grpcServerHost, *grpcServerPort, *streamWindow, insecure, oauthToken, tlsConfig)
 	grpcClientConfig := api.CreateClientConfig(*clientId, *repositoryId, *streamWindow, *webhookHMAC)
 
 	for {
-		stream := initializeWebhookEventStreamOrDie(grpcClientConfig, grpcServerConfig, ctx)
-		err := handleWebhookEventStream(stream, grpcClientConfig, ctx)
+		err := handleWebhookEventStream(grpcServerConfig, grpcClientConfig, ctx)
 		if err != nil {
 			sublogger.Fatal().Err(err).Msg("Error streaming from server")
 		}
+		if ctx.Err() != nil {
+			log.Info().Msgf("[Main-in] Closing FetchWebhookEvents (context error: %v)", ctx.Err())
+			break
+		}
+		if ctx.Done() != nil {
+			log.Info().Msg("[Main-in] Closing FetchWebhookEvents (context done)")
+		}
+		if ctx.Done() != nil  && ctx.Err() == nil {
+			ctx, stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		}
+	}
+	if ctx.Err() != nil {
+		log.Info().Msgf("[Main-out] Closing FetchWebhookEvents (context error: %v)", ctx.Err())
+	}
+	if ctx.Done() != nil {
+		log.Info().Msg("[Main-out] Closing FetchWebhookEvents (context done)")
 	}
 
 	sublogger.Info().Msg("Closing client")
-	tp.ForceFlush(ctx)
-	mp.ForceFlush(ctx)
 }
 
 func initHealthCheckServer(ctx context.Context, port string) {
@@ -154,64 +168,107 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "OK\n")
 }
 
-func handleWebhookEventStream(stream api.Gitstafette_FetchWebhookEventsClient, grpcClientConfig *api.GRPCClientConfig, ctx context.Context) error {
-	serverClosed := make(chan bool)
-	serverError := &ServerState{}
-	go func(serverResponse api.Gitstafette_FetchWebhookEventsClient, serverErrorState *ServerState) {
+func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *api.GRPCClientConfig, mainCtx context.Context) error {
+	//ctx := context.Background()
+	grpcOpts := createGrpcOptions(serverConfig)
+	address := serverConfig.Host + ":" + serverConfig.Port
+	conn, err := grpc.Dial(address, grpcOpts...)
+	if err != nil {
+		log.Fatal().Err(err).Msg("did not connect")
+	}
+	defer conn.Close()
 
-		// because Google Cloud Run's Envoy only handles streams for up to X amount of seconds,
-		// 	we have to connect to the server for at most the durationSeconds
-		finish := time.Now().Add(time.Second * time.Duration(grpcClientConfig.StreamWindow))
+	//ctx, cancel := context.WithTimeout(ctx, time.Duration(2 * clientConfig.StreamWindow) * time.Second)
+	//defer cancel()
+	//md := metadata.Pairs("timestamp", time.Now().Format(time.Stamp), "kn", "vn")
+	//mdCtx := metadata.NewOutgoingContext(ctx, md)
 
-		_, span := otel.Tracer("Gitstafette-Client").Start(ctx, "handleWebhookEventStream")
-		for time.Now().Before(finish) {
-			select {
-			case <-time.After(requestInterval):
-				span.AddEvent("requesting stream")
-				response, err := stream.Recv()
-				if err == io.EOF {
-					log.Info().Msg("Server send end of stream, closing")
-					serverClosed <- true // config has ended the stream
-					return
-				}
-				if err != nil {
-					errorMessage := fmt.Sprintf("Error receiving stream: %v\n", err)
-					log.Warn().Msg(errorMessage) // is this recoverable or not?
-					serverClosed <- true
-					serverErrorState.HasError = true
-					serverErrorState.ErrorMessage = errorMessage
-					return
-				}
+	client := api.NewGitstafetteClient(conn)
+	request := &api.WebhookEventsRequest{
+		ClientId:            clientConfig.ClientID,
+		RepositoryId:        clientConfig.RepositoryId,
+		LastReceivedEventId: 0,
+		DurationSecs:        uint32(serverConfig.StreamWindow),
+	}
+	//ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	//defer stop()
 
-				log.Printf("Received %d WebhookEvents", len(response.WebhookEvents))
+	stream, err := client.FetchWebhookEvents(context.Background(), request)
+	if err != nil {
+		log.Fatal().Err(err).Msg("could not fetch webhook events")
+	}
+
+	finish := time.Now().Add(time.Second * time.Duration(clientConfig.StreamWindow))
+	contextClosed := false
+
+	spanCtx, span := otel.Tracer("Gitstafette-Client").Start(stream.Context(), "handleWebhookEventStream")
+
+	for time.Now().Before(finish) {
+		select {
+		case <-time.After(requestInterval):
+			if contextClosed {
+				log.Info().Msg("Context is already closed")
+				break
+			}
+
+			span.AddEvent("requesting stream")
+			response, err := stream.Recv()
+			if err == io.EOF {
+				log.Info().Msg("Server send end of stream, closing")
+				contextClosed = true
+				break
+			}
+			if err != nil {
+				log.Warn().Msgf("Error receiving stream: %v\n", err) // is this recoverable or not?
+				contextClosed = true
+				return err
+			}
+
+			log.Info().Msgf("Received %d WebhookEvents", len(response.WebhookEvents))
+			span.AddEvent("EventsReceived", trace.WithAttributes(attribute.Int("events", len(response.WebhookEvents))))
+
+			if len(response.WebhookEvents) > 0 {
+
+			    _, span := otel.Tracer("Gitstafette-Client").Start(spanCtx , "EventsReceived")
+				span.AddEvent("EventsReceived", trace.WithAttributes(attribute.Int("events", len(response.WebhookEvents))))
 				for _, event := range response.WebhookEvents {
-					span.AddEvent("received event")
-					log.Printf("[grpc] InternalEvent: %d, body size: %d, number of headers:  %d\n", event.EventId, len(event.Body), len(event.Headers))
-					eventIsValid := v1.ValidateEvent(grpcClientConfig.WebhookHMAC, event)
+
+					log.Printf("[handleWebhookEventStream] InternalEvent: %d, body size: %d, number of headers:  %d\n", event.EventId, len(event.Body), len(event.Headers))
+					eventIsValid := v1.ValidateEvent(clientConfig.WebhookHMAC, event)
 					messageAddition := ""
-					if grpcClientConfig.WebhookHMAC != "" {
+					if clientConfig.WebhookHMAC != "" {
 						messageAddition = " against hmac token on digest header"
 					}
-					log.Printf("[grpc] Event %v is validated"+messageAddition+", valid: %v",
+					log.Printf("[handleWebhookEventStream] Event %v is validated"+messageAddition+", valid: %v",
 						event.EventId, eventIsValid)
-					cache.Event(grpcClientConfig.RepositoryId, event)
+					cache.Event(clientConfig.RepositoryId, event)
 				}
-			case <-ctx.Done(): // Activated when ctx.Done() closes
-				span.AddEvent("context done")
-				log.Info().Msg("[grpc] Closing FetchWebhookEvents")
-				serverClosed <- true
-				return
+				span.End()
 			}
+		case <-stream.Context().Done():
+			span.AddEvent("stream context done")
+			log.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents (stream context done)")
+			contextClosed = true
+			break
+		case <-mainCtx.Done(): // Activated when ctx.Done() closes
+			span.AddEvent("mainCtx done")
+			log.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents (mainCtx done)")
+			contextClosed = true
+			break
 		}
-		span.AddEvent("finish")
-		span.End()
-		serverClosed <- true
-	}(stream, serverError)
-	<-serverClosed
-	stream.Context().Done()
-	if serverError.HasError {
-		fmt.Errorf(serverError.ErrorMessage)
+		if contextClosed {
+			log.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents (context checkpoint)")
+			break
+		}
 	}
+
+	if stream.Context().Err() != nil {
+		log.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents (stream context error)")
+		return stream.Context().Err()
+	}
+	log.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents")
+	span.AddEvent("finish")
+	span.End()
 	return nil
 }
 
@@ -221,13 +278,13 @@ var kacp = keepalive.ClientParameters{
 	PermitWithoutStream: true,             // send pings even without active streams
 }
 
-func initializeWebhookEventStreamOrDie(clientConfig *api.GRPCClientConfig, serverConfig *api.GRPCServerConfig, ctx context.Context) api.Gitstafette_FetchWebhookEventsClient {
+func createGrpcOptions(serverConfig *api.GRPCServerConfig) []grpc.DialOption {
 	sublogger := log.With().Str("component", "grpc-init").Logger()
 
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithAuthority(serverConfig.Host))
-	opts = append(opts, grpc.WithKeepaliveParams(kacp))
-	opts = append(opts, grpc.WithChainStreamInterceptor(otelgrpc.StreamClientInterceptor(), ClientStreamInterceptor))
+	//opts = append(opts, grpc.WithKeepaliveParams(kacp))
+	opts = append(opts, grpc.WithChainStreamInterceptor(otelgrpc.StreamClientInterceptor()))
 	opts = append(opts, grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()))
 
 	if serverConfig.OAuthToken != "" {
@@ -255,32 +312,13 @@ func initializeWebhookEventStreamOrDie(clientConfig *api.GRPCClientConfig, serve
 		opts = append(opts, grpc.WithTransportCredentials(creds))
 	}
 
-	server := fmt.Sprintf("%s:%s", serverConfig.Host, serverConfig.Port)
-	conn, err := grpc.Dial(server, opts...)
-
-	if err != nil {
-		sublogger.Fatal().Err(err).Str("server", server).Msg("cannot connect to the config")
-	}
-
-	client := api.NewGitstafetteClient(conn)
-	request := &api.WebhookEventsRequest{
-		ClientId:            clientConfig.ClientID,
-		RepositoryId:        clientConfig.RepositoryId,
-		LastReceivedEventId: 0,
-		DurationSecs:        uint32(serverConfig.StreamWindow),
-	}
-
-	stream, err := client.FetchWebhookEvents(ctx, request)
-	if err != nil {
-		sublogger.Fatal().Err(err).Str("server", server).Msg("could not open stream")
-	}
-	return stream
+	return opts
 }
 
-func initResource() *sdkresource.Resource {
+func initResource(ctx context.Context) *sdkresource.Resource {
 	initResourcesOnce.Do(func() {
 		extraResources, _ := sdkresource.New(
-			context.Background(),
+			ctx,
 			sdkresource.WithOS(),
 			sdkresource.WithProcess(),
 			sdkresource.WithContainer(),
@@ -301,7 +339,7 @@ func initTracerProvider(ctx context.Context) *sdktrace.TracerProvider {
 	}
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(initResource()),
+		sdktrace.WithResource(initResource(ctx)),
 	)
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
@@ -316,26 +354,10 @@ func initMeterProvider(ctx context.Context) *sdkmetric.MeterProvider {
 
 	mp := sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
-		sdkmetric.WithResource(initResource()),
+		sdkmetric.WithResource(initResource(ctx)),
 	)
 	global.SetMeterProvider(mp)
 	return mp
 }
 
-func ClientStreamInterceptor(
-	ctx context.Context,
-	desc *grpc.StreamDesc,
-	cc *grpc.ClientConn,
-	method string,
-	streamer grpc.Streamer,
-	opts ...grpc.CallOption) (grpc.ClientStream, error) {
-
-	newCtx, span := otel.Tracer("Gitstafette-Client").Start(ctx, method)
-	s, err := streamer(newCtx, desc, cc, method, opts...)
-	if err != nil {
-		return nil, err
-	}
-	span.SetAttributes(attribute.String("grpc.stream.type", "client"))
-	return s, nil
-}
 

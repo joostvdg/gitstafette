@@ -2,12 +2,11 @@ package cache
 
 import (
 	api "github.com/joostvdg/gitstafette/api/v1"
-	"golang.org/x/exp/slices"
 	"sync"
 )
 
 type inMemoryStore struct {
-	mu     sync.RWMutex
+	mu     sync.Mutex
 	events map[string][]*api.WebhookEventInternal
 }
 
@@ -17,7 +16,6 @@ func NewInMemoryStore() *inMemoryStore {
 	return i
 }
 
-// TODO need a lock of some sort
 func (i *inMemoryStore) Store(repositoryId string, event *api.WebhookEventInternal) bool {
 	sublogger.Debug().Msg("Claiming lock")
 	i.mu.Lock()
@@ -65,15 +63,15 @@ func (i *inMemoryStore) Remove(repositoryId string, event *api.WebhookEventInter
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	events := i.events[repositoryId]
-	indexToRemove := slices.Index(events, event)
-	updatedEvents := removeElementByIndex(events, indexToRemove)
+	if events == nil {
+		return false // nothing to remove
+	}
+	var updatedEvents []*api.WebhookEventInternal
+	for _, storedEvent := range events {
+		if storedEvent.ID != event.ID {
+			updatedEvents = append(updatedEvents, storedEvent)
+		}
+	}
 	i.events[repositoryId] = updatedEvents
 	return true
-}
-
-// removes element while preserving order
-// copied from here: https://golangprojectstructure.com/removing-elements-from-slice-array/
-// TODO: do we need to preserve order?
-func removeElementByIndex[T any](slice []T, index int) []T {
-	return append(slice[:index], slice[index+1:]...)
 }

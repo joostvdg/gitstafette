@@ -105,7 +105,10 @@ ghz-local-2:
 
 .PHONY: server-1
 server-1:
-	go run cmd/server/main.go --repositories 537845873 --port 1323 --grpcPort 50051 --grpcHealthPort 50051
+	export OTEL_SERVICE_NAME=GSF-Server-1; export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317; go \
+		run cmd/server/main.go --repositories 537845873 \
+		--port 1323 --grpcPort 50051 --grpcHealthPort 50051 \
+
 	#    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317;\
 	#    export OTEL_SERVICE_NAME=Server-1;\
 	#    export OTEL_RESOURCE_ATTRIBUTES="service.namespace=gitstafette,service.name=Server,service.instance.id=Server-1";\
@@ -143,9 +146,16 @@ server-relay-gcr:
 		--relayEnabled=true --relayHost=gitstafette.joostvdg.net --relayPort=443
 
 
+.PHONY: test-client-1
+test-client-1:
+	export OTEL_SERVICE_NAME=GSF-TEST-CLIENT-1; go run cmd/test-client/main.go --server "localhost" --port 50051
+
 .PHONY: client-1
 client-1:
-	go run cmd/client/main.go --repo 537845873 --server "localhost" --port 50051 --insecure=true
+	export OTEL_SERVICE_NAME=GSF-Client-1; export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317; go \
+ 	    run cmd/client/main.go --repo 537845873 --server "localhost" \
+		--port 50051 --insecure=true \
+		--streamWindow 15
 
     # export OTEL_SERVICE_NAME=Client-1;\
     # export OTEL_RESOURCE_ATTRIBUTES="service.namespace=gitstafette,service.name=Client,service.instance.id=Client-1";\
@@ -153,7 +163,7 @@ client-1:
 
 .PHONY: client-1-tls
 client-1-tls:
-	OAUTH_TOKEN="Q4HEg0ODGuie0wraqUn4" go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 \
+	export OAUTH_TOKEN="Q4HEg0ODGuie0wraqUn4";export OTEL_SERVICE_NAME=GSF-CLIENT-1; go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 \
 		--secure \
 		--streamWindow 100 \
 		--healthCheckPort=8081 \

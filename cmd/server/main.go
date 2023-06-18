@@ -15,7 +15,11 @@ import (
 	"github.com/joostvdg/gitstafette/internal/relay"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog"
-	semconv "go.opentelemetry.io/otel/semconv/v1.18.0"
+	"go.opentelemetry.io/otel/attribute"
+	codes2 "go.opentelemetry.io/otel/codes"
+
+	//semconv "go.opentelemetry.io/otel/semconv/v1.18.0"
+	"go.opentelemetry.io/otel/trace"
 	"sync"
 
 	"github.com/rs/zerolog/log"
@@ -48,12 +52,14 @@ import (
 
 const (
 	envSentry        = "SENTRY_DSN"
-	responseInterval = time.Second * 30
+	responseInterval = time.Second * 5
 )
 
 var (
 	resource          *sdkresource.Resource
 	initResourcesOnce sync.Once
+	tp *sdktrace.TracerProvider
+	mp *sdkmetric.MeterProvider
 )
 
 type server struct {
@@ -228,20 +234,6 @@ func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
 }
 
 func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *grpc.Server, ctx context.Context) *grpc.Server {
-	tp := initTracerProvider(ctx)
-	defer func() {
-		if err := tp.Shutdown(ctx); err != nil {
-			log.Fatal().Err(err).Msg("Tracer Provider Shutdown")
-		}
-	}()
-
-	mp := initMeterProvider(ctx)
-	defer func() {
-		if err := mp.Shutdown(ctx); err != nil {
-			log.Fatal().Err(err).Msg("Error shutting down meter provider")
-		}
-	}()
-
 	grpcServer := grpc.NewServer(
 		//grpc.KeepaliveEnforcementPolicy(kaep),
 		//grpc.KeepaliveParams(kasp),
@@ -255,12 +247,27 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *
 			//grpc.KeepaliveEnforcementPolicy(kaep),
 			//grpc.KeepaliveParams(kasp),
 			grpc.Creds(serverCredentials),
-			grpc.ChainStreamInterceptor(grpc_internal.ValidateToken, grpc_internal.EventsServerStreamInterceptor, otelgrpc.StreamServerInterceptor()),
+			grpc.ChainStreamInterceptor(grpc_internal.ValidateToken, otelgrpc.StreamServerInterceptor()), // grpc_internal.EventsServerStreamInterceptor
 			grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
 		)
 	}
 
 	go func(s *grpc.Server) {
+		tp := initTracerProvider()
+		defer func() {
+			if err := tp.Shutdown(context.Background()); err != nil {
+				log.Fatal().Err(err).Msg("Error shutting down Tracer provider")
+			}
+
+		}()
+
+		mp := initMeterProvider()
+		defer func() {
+			if err := mp.Shutdown(context.Background()); err != nil {
+				log.Fatal().Err(err).Msg("Error shutting down Meter provider")
+			}
+		}()
+
 		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to listen")
@@ -283,7 +290,91 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *
 	return grpcServer
 }
 
+func (s server) WebhookEventStatus(ctx context.Context, req *api.WebhookEventStatusRequest) (*api.WebhookEventStatusResponse, error) {
+	response := &api.WebhookEventStatusResponse{
+		ServerId:     "Gitstafette",
+		Count:        0,
+		RepositoryId: req.RepositoryId,
+		Status:       "OK",
+	}
+	return response, nil
+}
+func (s server) WebhookEventStatuses(request *api.WebhookEventStatusesRequest, srv api.Gitstafette_WebhookEventStatusesServer) error {
 
+	status01 := &api.WebhookEventStatusResponse{
+		ServerId:     "Gitstafette",
+		Count:        1,
+		RepositoryId: "12345",
+		Status:       "OK",
+	}
+
+	status02 := &api.WebhookEventStatusResponse{
+		ServerId:     "Gitstafette",
+		Count:        2,
+		RepositoryId: "7891",
+		Status:       "OK",
+	}
+
+	status03 := &api.WebhookEventStatusResponse{
+		ServerId:     "Gitstafette",
+		Count:        3,
+		RepositoryId: "7892",
+		Status:       "FAILED",
+	}
+
+	finish := time.Now().Add(time.Second * 30)
+	ctx, stop := signal.NotifyContext(srv.Context(), os.Interrupt, syscall.SIGTERM)
+
+	defer stop()
+
+	waitInterval := time.Second * 5
+
+	log.Printf("Wait Interval is: %v", waitInterval)
+
+	spanCtx, span := otel.Tracer("Server").Start(ctx , "WebhookEventStatuses")
+	span.AddEvent("Start")
+	events :=  []*api.WebhookEventStatusResponse{status01, status02, status03}
+	lastEvent := len(events) - 1
+	currentEvent := 0
+
+	for time.Now().Before(finish) {
+		closed := false
+		select {
+		case <-time.After(waitInterval):
+			eventInfo := fmt.Sprintf("Sent event %v of %v", currentEvent, lastEvent)
+			_, span := otel.Tracer("Server").Start(spanCtx , eventInfo)
+			if currentEvent > lastEvent {
+				closed = true
+				break
+			}
+			eventStatus := events[currentEvent]
+			currentEvent++
+
+			span.AddEvent("Send", trace.WithAttributes(attribute.Int("eventCounter", currentEvent)))
+			if err := srv.Send(eventStatus); err != nil {
+				return err
+			}
+			span.End()
+			break
+		case <-srv.Context().Done(): // Activated when ctx.Done() closes
+			log.Printf("Closing WebhookEventStatuses (client context %s closed)", request.ClientId)
+			closed = true
+			break
+		case <-ctx.Done(): // Activated when ctx.Done() closes
+			log.Info().Msg("Closing WebhookEventStatuses (main context closed)")
+			closed = true
+			break
+		}
+		if closed {
+			log.Info().Msg("Context is already closed")
+			break
+		}
+	}
+	log.Printf("Reached %v, so closed context %s", finish, request.ClientId)
+	span.AddEvent("Finished", trace.WithAttributes(attribute.String("reason", "timeout")))
+	span.End()
+	return nil
+}
 
 func (s server) WebhookEventPush(ignoredContext context.Context, request *api.WebhookEventPushRequest) (*api.WebhookEventPushResponse, error) {
 	response := &api.WebhookEventPushResponse{
@@ -305,27 +396,25 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 
 	durationSeconds := request.GetDurationSecs()
 	finish := time.Now().Add(time.Second * time.Duration(durationSeconds))
+	log.Printf("Stream is alive from %v to %v", time.Now(), finish)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	_, span := otel.Tracer("Server").Start(ctx , "FetchWebhookEvents")
-	defer span.End()
+	ctx, stop := signal.NotifyContext(srv.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	//ctx := srv.Context()
+	spanCtx, span := otel.Tracer("Server").Start(srv.Context() , "FetchWebhookEvents")
 
-	waitInterval := responseInterval
-	durationIntervalCalc := (durationSeconds / 3) - 5
-	if time.Duration(durationIntervalCalc) > waitInterval {
-		waitInterval = time.Duration(durationIntervalCalc)
-	}
-	log.Printf("Wait Interval is: %v", waitInterval)
+	log.Printf("Response Interval is: %v", responseInterval)
 
 	for time.Now().Before(finish) {
+		closed := false
 		select {
-		case <-time.After(waitInterval):
+		case <-time.After(responseInterval):
+			_, span := otel.Tracer("Server").Start(spanCtx , "retrieveCachedEventsForRepository")
 			log.Printf("Fetching events for repo %v (with Span)", request.RepositoryId)
 
 			events, err := retrieveCachedEventsForRepository(request.RepositoryId)
 
-			// TODO properly handleerror
+			// TODO properly handle error
 			if err != nil {
 				log.Printf("Could not get events for Repo: %v\n", err)
 			}
@@ -336,20 +425,30 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 
 			if err := srv.Send(response); err != nil {
 				log.Printf("Error sending stream: %v\n", err)
+				span.SetStatus(codes2.Error, "Error sending stream")
 				return err
 			}
 
 			updateRelayStatus(events, request.RepositoryId)
-			span.AddEvent("Events sent")
+			span.AddEvent("SendEvents", trace.WithAttributes(attribute.Int("events", len(events))))
+			span.End()
 		case <-srv.Context().Done(): // Activated when ctx.Done() closes
 			log.Printf("Closing FetchWebhookEvents (client context %s closed)", request.ClientId)
-			return nil
+			closed = true
+			break
 		case <-ctx.Done(): // Activated when ctx.Done() closes
 			log.Info().Msg("Closing FetchWebhookEvents (main context closed)")
-			return nil
+			closed = true
+			break
+		}
+		if closed {
+			log.Info().Msg("Context is already closed")
+			break
 		}
 	}
 	log.Printf("Reached %v, so closed context %s", finish, request.ClientId)
+	span.AddEvent("Finished", trace.WithAttributes(attribute.String("reason", "timeout")))
+	span.End()
 	return nil
 }
 
@@ -401,10 +500,10 @@ func (s *HealthCheckService) Watch(req *grpc_health_v1.HealthCheckRequest, serve
 }
 
 
-func initResource(ctx context.Context) *sdkresource.Resource {
+func initResource() *sdkresource.Resource {
 	initResourcesOnce.Do(func() {
 		extraResources, _ := sdkresource.New(
-			ctx,
+			context.Background(),
 			sdkresource.WithOS(),
 			sdkresource.WithProcess(),
 			sdkresource.WithContainer(),
@@ -418,29 +517,30 @@ func initResource(ctx context.Context) *sdkresource.Resource {
 	return resource
 }
 
-func initTracerProvider(ctx context.Context) *sdktrace.TracerProvider {
+func initTracerProvider() *sdktrace.TracerProvider {
+	ctx := context.Background()
 	exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithInsecure(), otlptracegrpc.WithEndpoint("localhost:4317"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("OTLP Trace gRPC Creation failed")
 	}
-	resources := sdkresource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceNameKey.String("myService"),
-		semconv.ServiceVersionKey.String("1.0.0"),
-		semconv.ServiceInstanceIDKey.String("abcdef12345"),
-	)
+	//resources := sdkresource.NewWithAttributes(
+	//	semconv.SchemaURL,
+	//	semconv.ServiceNameKey.String("Gitstafette"),
+	//	semconv.ServiceVersionKey.String("1.0.0"),
+	//	semconv.ServiceInstanceIDKey.String("abcdef12345"),
+	//)
 
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(initResource(ctx)),
-		sdktrace.WithResource(resources),
+		sdktrace.WithResource(initResource()),
 	)
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 	return tp
 }
 
-func initMeterProvider(ctx context.Context) *sdkmetric.MeterProvider {
+func initMeterProvider() *sdkmetric.MeterProvider {
+	ctx := context.Background()
 	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithInsecure(), otlpmetricgrpc.WithEndpoint("localhost:4317"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("new otlp metric grpc exporter failed")
@@ -448,7 +548,7 @@ func initMeterProvider(ctx context.Context) *sdkmetric.MeterProvider {
 
 	mp := sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
-		sdkmetric.WithResource(initResource(ctx)),
+		sdkmetric.WithResource(initResource()),
 	)
 	global.SetMeterProvider(mp)
 	return mp

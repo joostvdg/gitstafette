@@ -7,6 +7,24 @@ option go_package = "github.com/joostvdg/gitstafette/api/gitstafette_v1";
 service Gitstafette {
   rpc FetchWebhookEvents (WebhookEventsRequest) returns (stream WebhookEventsResponse){}
   rpc WebhookEventPush (WebhookEventPushRequest) returns (WebhookEventPushResponse) {}
+  rpc WebhookEventStatus (WebhookEventStatusRequest) returns (WebhookEventStatusResponse) {}
+  rpc WebhookEventStatuses (WebhookEventStatusesRequest) returns (stream WebhookEventStatusResponse) {}
+}
+
+message WebhookEventStatusRequest {
+  string client_id = 1;
+  string repository_id = 2;
+}
+
+message WebhookEventStatusesRequest {
+  string client_id = 1;
+}
+
+message WebhookEventStatusResponse {
+  string server_id = 1;
+  uint32 count = 2;
+  string repository_id = 3;
+  string status = 4;
 }
 
 message WebhookEventsRequest {

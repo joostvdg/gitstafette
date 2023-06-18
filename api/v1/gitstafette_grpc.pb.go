@@ -19,6 +19,8 @@ const _ = grpc.SupportPackageIsVersion7
 type GitstafetteClient interface {
 	FetchWebhookEvents(ctx context.Context, in *WebhookEventsRequest, opts ...grpc.CallOption) (Gitstafette_FetchWebhookEventsClient, error)
 	WebhookEventPush(ctx context.Context, in *WebhookEventPushRequest, opts ...grpc.CallOption) (*WebhookEventPushResponse, error)
+	WebhookEventStatus(ctx context.Context, in *WebhookEventStatusRequest, opts ...grpc.CallOption) (*WebhookEventStatusResponse, error)
+	WebhookEventStatuses(ctx context.Context, in *WebhookEventStatusesRequest, opts ...grpc.CallOption) (Gitstafette_WebhookEventStatusesClient, error)
 }
 
 type gitstafetteClient struct {
@@ -70,12 +72,55 @@ func (c *gitstafetteClient) WebhookEventPush(ctx context.Context, in *WebhookEve
 	return out, nil
 }
 
+func (c *gitstafetteClient) WebhookEventStatus(ctx context.Context, in *WebhookEventStatusRequest, opts ...grpc.CallOption) (*WebhookEventStatusResponse, error) {
+	out := new(WebhookEventStatusResponse)
+	err := c.cc.Invoke(ctx, "/gitstafette.v1.Gitstafette/WebhookEventStatus", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gitstafetteClient) WebhookEventStatuses(ctx context.Context, in *WebhookEventStatusesRequest, opts ...grpc.CallOption) (Gitstafette_WebhookEventStatusesClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_Gitstafette_serviceDesc.Streams[1], "/gitstafette.v1.Gitstafette/WebhookEventStatuses", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &gitstafetteWebhookEventStatusesClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Gitstafette_WebhookEventStatusesClient interface {
+	Recv() (*WebhookEventStatusResponse, error)
+	grpc.ClientStream
+}
+
+type gitstafetteWebhookEventStatusesClient struct {
+	grpc.ClientStream
+}
+
+func (x *gitstafetteWebhookEventStatusesClient) Recv() (*WebhookEventStatusResponse, error) {
+	m := new(WebhookEventStatusResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // GitstafetteServer is the server API for Gitstafette service.
 // All implementations must embed UnimplementedGitstafetteServer
 // for forward compatibility
 type GitstafetteServer interface {
 	FetchWebhookEvents(*WebhookEventsRequest, Gitstafette_FetchWebhookEventsServer) error
 	WebhookEventPush(context.Context, *WebhookEventPushRequest) (*WebhookEventPushResponse, error)
+	WebhookEventStatus(context.Context, *WebhookEventStatusRequest) (*WebhookEventStatusResponse, error)
+	WebhookEventStatuses(*WebhookEventStatusesRequest, Gitstafette_WebhookEventStatusesServer) error
 	mustEmbedUnimplementedGitstafetteServer()
 }
 
@@ -88,6 +133,12 @@ func (UnimplementedGitstafetteServer) FetchWebhookEvents(*WebhookEventsRequest, 
 }
 func (UnimplementedGitstafetteServer) WebhookEventPush(context.Context, *WebhookEventPushRequest) (*WebhookEventPushResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method WebhookEventPush not implemented")
+}
+func (UnimplementedGitstafetteServer) WebhookEventStatus(context.Context, *WebhookEventStatusRequest) (*WebhookEventStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method WebhookEventStatus not implemented")
+}
+func (UnimplementedGitstafetteServer) WebhookEventStatuses(*WebhookEventStatusesRequest, Gitstafette_WebhookEventStatusesServer) error {
+	return status.Errorf(codes.Unimplemented, "method WebhookEventStatuses not implemented")
 }
 func (UnimplementedGitstafetteServer) mustEmbedUnimplementedGitstafetteServer() {}
 
@@ -141,6 +192,45 @@ func _Gitstafette_WebhookEventPush_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Gitstafette_WebhookEventStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WebhookEventStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GitstafetteServer).WebhookEventStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gitstafette.v1.Gitstafette/WebhookEventStatus",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GitstafetteServer).WebhookEventStatus(ctx, req.(*WebhookEventStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Gitstafette_WebhookEventStatuses_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WebhookEventStatusesRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GitstafetteServer).WebhookEventStatuses(m, &gitstafetteWebhookEventStatusesServer{stream})
+}
+
+type Gitstafette_WebhookEventStatusesServer interface {
+	Send(*WebhookEventStatusResponse) error
+	grpc.ServerStream
+}
+
+type gitstafetteWebhookEventStatusesServer struct {
+	grpc.ServerStream
+}
+
+func (x *gitstafetteWebhookEventStatusesServer) Send(m *WebhookEventStatusResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 var _Gitstafette_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "gitstafette.v1.Gitstafette",
 	HandlerType: (*GitstafetteServer)(nil),
@@ -149,11 +239,20 @@ var _Gitstafette_serviceDesc = grpc.ServiceDesc{
 			MethodName: "WebhookEventPush",
 			Handler:    _Gitstafette_WebhookEventPush_Handler,
 		},
+		{
+			MethodName: "WebhookEventStatus",
+			Handler:    _Gitstafette_WebhookEventStatus_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "FetchWebhookEvents",
 			Handler:       _Gitstafette_FetchWebhookEvents_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WebhookEventStatuses",
+			Handler:       _Gitstafette_WebhookEventStatuses_Handler,
 			ServerStreams: true,
 		},
 	},

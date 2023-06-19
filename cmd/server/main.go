@@ -400,8 +400,12 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 
 	ctx, stop := signal.NotifyContext(srv.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	//ctx := srv.Context()
-	spanCtx, span := otel.Tracer("Server").Start(srv.Context() , "FetchWebhookEvents")
+
+	span := trace.SpanFromContext(srv.Context())
+	sublogger := log.With().
+		Str("span_id", span.SpanContext().SpanID().String()).
+		Str("trace_id", span.SpanContext().TraceID().String()).
+		Logger()
 
 	log.Printf("Response Interval is: %v", responseInterval)
 
@@ -409,44 +413,46 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 		closed := false
 		select {
 		case <-time.After(responseInterval):
-			_, span := otel.Tracer("Server").Start(spanCtx , "retrieveCachedEventsForRepository")
-			log.Printf("Fetching events for repo %v (with Span)", request.RepositoryId)
-
+			_, span := otel.Tracer("Server").Start(srv.Context() , "retrieveCachedEventsForRepository")
+			sublogger.Info().Msgf("Fetching events for repo %v (with Span)", request.RepositoryId)
+			
 			events, err := retrieveCachedEventsForRepository(request.RepositoryId)
 
 			// TODO properly handle error
 			if err != nil {
-				log.Printf("Could not get events for Repo: %v\n", err)
+				sublogger.Info().Msgf("Could not get events for Repo: %v\n", err)
+				span.SetStatus(codes2.Error, "Could not get events for Repo")
+				return err
 			}
 			response := &api.WebhookEventsResponse{
 				WebhookEvents: events,
 			}
-			log.Printf("Send %v events to client (%v) for repo %v", len(events), request.ClientId, request.RepositoryId)
 
 			if err := srv.Send(response); err != nil {
-				log.Printf("Error sending stream: %v\n", err)
+				sublogger.Info().Msgf("Error sending stream: %v\n", err)
 				span.SetStatus(codes2.Error, "Error sending stream")
 				return err
 			}
+			sublogger.Info().Msgf("Send %v events to client (%v) for repo %v", len(events), request.ClientId, request.RepositoryId)
 
 			updateRelayStatus(events, request.RepositoryId)
 			span.AddEvent("SendEvents", trace.WithAttributes(attribute.Int("events", len(events))))
 			span.End()
 		case <-srv.Context().Done(): // Activated when ctx.Done() closes
-			log.Printf("Closing FetchWebhookEvents (client context %s closed)", request.ClientId)
+			sublogger.Info().Msgf("Closing FetchWebhookEvents (client context %s closed)", request.ClientId)
 			closed = true
 			break
 		case <-ctx.Done(): // Activated when ctx.Done() closes
-			log.Info().Msg("Closing FetchWebhookEvents (main context closed)")
+			sublogger.Info().Msg("Closing FetchWebhookEvents (main context closed)")
 			closed = true
 			break
 		}
 		if closed {
-			log.Info().Msg("Context is already closed")
+			sublogger.Info().Msg("Context is already closed")
 			break
 		}
 	}
-	log.Printf("Reached %v, so closed context %s", finish, request.ClientId)
+	sublogger.Info().Msgf("Reached %v, so closed context %s", finish, request.ClientId)
 	span.AddEvent("Finished", trace.WithAttributes(attribute.String("reason", "timeout")))
 	span.End()
 	return nil
@@ -523,12 +529,6 @@ func initTracerProvider() *sdktrace.TracerProvider {
 	if err != nil {
 		log.Fatal().Err(err).Msg("OTLP Trace gRPC Creation failed")
 	}
-	//resources := sdkresource.NewWithAttributes(
-	//	semconv.SchemaURL,
-	//	semconv.ServiceNameKey.String("Gitstafette"),
-	//	semconv.ServiceVersionKey.String("1.0.0"),
-	//	semconv.ServiceInstanceIDKey.String("abcdef12345"),
-	//)
 
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),

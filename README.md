@@ -346,3 +346,14 @@ internal.span.format	proto
 otel.library.name	Server
 span.kind	internal
 ```
+
+## GRPC & Otel
+
+* https://medium.com/@vcomposieux/opentelemetry-trace-and-instrument-your-application-code-3efd2a7b1de0
+* https://lightstep.com/blog/opentelemetry-go-all-you-need-to-know
+
+## Handling Contexts
+
+* https://www.digitalocean.com/community/tutorials/how-to-use-contexts-in-go
+* https://blog.golang.org/context
+* 

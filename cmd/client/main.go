@@ -128,20 +128,11 @@ func main() {
 			log.Info().Msgf("[Main-in] Closing FetchWebhookEvents (context error: %v)", ctx.Err())
 			break
 		}
-		if ctx.Done() != nil {
-			log.Info().Msg("[Main-in] Closing FetchWebhookEvents (context done)")
-		}
 		if ctx.Done() != nil  && ctx.Err() == nil {
+			log.Info().Msg("[Main] Restarting FetchWebhookEvents as context expired but no error occurred")
 			ctx, stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		}
 	}
-	if ctx.Err() != nil {
-		log.Info().Msgf("[Main-out] Closing FetchWebhookEvents (context error: %v)", ctx.Err())
-	}
-	if ctx.Done() != nil {
-		log.Info().Msg("[Main-out] Closing FetchWebhookEvents (context done)")
-	}
-
 	sublogger.Info().Msg("Closing client")
 }
 
@@ -169,7 +160,6 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *api.GRPCClientConfig, mainCtx context.Context) error {
-	//ctx := context.Background()
 	grpcOpts := createGrpcOptions(serverConfig)
 	address := serverConfig.Host + ":" + serverConfig.Port
 	conn, err := grpc.Dial(address, grpcOpts...)
@@ -178,11 +168,6 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 	}
 	defer conn.Close()
 
-	//ctx, cancel := context.WithTimeout(ctx, time.Duration(2 * clientConfig.StreamWindow) * time.Second)
-	//defer cancel()
-	//md := metadata.Pairs("timestamp", time.Now().Format(time.Stamp), "kn", "vn")
-	//mdCtx := metadata.NewOutgoingContext(ctx, md)
-
 	client := api.NewGitstafetteClient(conn)
 	request := &api.WebhookEventsRequest{
 		ClientId:            clientConfig.ClientID,
@@ -190,8 +175,6 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 		LastReceivedEventId: 0,
 		DurationSecs:        uint32(serverConfig.StreamWindow),
 	}
-	//ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	//defer stop()
 
 	stream, err := client.FetchWebhookEvents(context.Background(), request)
 	if err != nil {
@@ -200,46 +183,49 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 
 	finish := time.Now().Add(time.Second * time.Duration(clientConfig.StreamWindow))
 	contextClosed := false
-
-	spanCtx, span := otel.Tracer("Gitstafette-Client").Start(stream.Context(), "handleWebhookEventStream")
+	span := trace.SpanFromContext(stream.Context())
+	sublogger := log.With().
+		Str("span_id", span.SpanContext().SpanID().String()).
+		Str("trace_id", span.SpanContext().TraceID().String()).
+		Logger()
 
 	for time.Now().Before(finish) {
 		select {
 		case <-time.After(requestInterval):
 			if contextClosed {
-				log.Info().Msg("Context is already closed")
+				sublogger.Info().Msg("Context is already closed")
 				break
 			}
 
 			span.AddEvent("requesting stream")
 			response, err := stream.Recv()
 			if err == io.EOF {
-				log.Info().Msg("Server send end of stream, closing")
+				sublogger.Info().Msg("Server send end of stream, closing")
 				contextClosed = true
 				break
 			}
 			if err != nil {
-				log.Warn().Msgf("Error receiving stream: %v\n", err) // is this recoverable or not?
+				sublogger.Warn().Msgf("Error receiving stream: %v\n", err) // is this recoverable or not?
 				contextClosed = true
 				return err
 			}
 
-			log.Info().Msgf("Received %d WebhookEvents", len(response.WebhookEvents))
+			sublogger.Info().Msgf("Received %d WebhookEvents", len(response.WebhookEvents))
 			span.AddEvent("EventsReceived", trace.WithAttributes(attribute.Int("events", len(response.WebhookEvents))))
 
 			if len(response.WebhookEvents) > 0 {
 
-			    _, span := otel.Tracer("Gitstafette-Client").Start(spanCtx , "EventsReceived")
+			    _, span := otel.Tracer("Gitstafette-Client").Start(stream.Context() , "EventsReceived")
 				span.AddEvent("EventsReceived", trace.WithAttributes(attribute.Int("events", len(response.WebhookEvents))))
 				for _, event := range response.WebhookEvents {
 
-					log.Printf("[handleWebhookEventStream] InternalEvent: %d, body size: %d, number of headers:  %d\n", event.EventId, len(event.Body), len(event.Headers))
+					sublogger.Printf("[handleWebhookEventStream] InternalEvent: %d, body size: %d, number of headers:  %d\n", event.EventId, len(event.Body), len(event.Headers))
 					eventIsValid := v1.ValidateEvent(clientConfig.WebhookHMAC, event)
 					messageAddition := ""
 					if clientConfig.WebhookHMAC != "" {
 						messageAddition = " against hmac token on digest header"
 					}
-					log.Printf("[handleWebhookEventStream] Event %v is validated"+messageAddition+", valid: %v",
+					sublogger.Printf("[handleWebhookEventStream] Event %v is validated"+messageAddition+", valid: %v",
 						event.EventId, eventIsValid)
 					cache.Event(clientConfig.RepositoryId, event)
 				}
@@ -247,26 +233,26 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 			}
 		case <-stream.Context().Done():
 			span.AddEvent("stream context done")
-			log.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents (stream context done)")
+			sublogger.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents (stream context done)")
 			contextClosed = true
 			break
 		case <-mainCtx.Done(): // Activated when ctx.Done() closes
 			span.AddEvent("mainCtx done")
-			log.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents (mainCtx done)")
+			sublogger.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents (mainCtx done)")
 			contextClosed = true
 			break
 		}
 		if contextClosed {
-			log.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents (context checkpoint)")
+			sublogger.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents (context checkpoint)")
 			break
 		}
 	}
 
 	if stream.Context().Err() != nil {
-		log.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents (stream context error)")
+		sublogger.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents (stream context error)")
 		return stream.Context().Err()
 	}
-	log.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents")
+	sublogger.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents")
 	span.AddEvent("finish")
 	span.End()
 	return nil

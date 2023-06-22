@@ -132,6 +132,10 @@ func main() {
 			log.Info().Msg("[Main] Restarting FetchWebhookEvents as context expired but no error occurred")
 			ctx, stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		}
+		// TODO: add exponential backoff in case we fail to connect to the server
+		sleepTime := time.Second * 3
+		sublogger.Info().Msgf("Sleeping for %v", sleepTime)
+		time.Sleep(sleepTime)
 	}
 	sublogger.Info().Msg("Closing client")
 }
@@ -149,6 +153,8 @@ func initHealthCheckServer(ctx context.Context, port string) {
 
 	go func() {
 		err := muxServer.ListenAndServe()
+
+		
 		if err != nil {
 			log.Fatal().Err(err).Msg("Could not start health check service")
 		}

@@ -9,8 +9,10 @@ import (
 	v1 "github.com/joostvdg/gitstafette/api/v1"
 	"github.com/joostvdg/gitstafette/internal/cache"
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
+	"github.com/joostvdg/gitstafette/internal/otel_util"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	otelapi "go.opentelemetry.io/otel/metric"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -91,6 +93,15 @@ func RelayCachedEvents(serviceContext *gcontext.ServiceContext, repositoryId str
 	ctx := serviceContext.Context
 	relay := serviceContext.Relay
 	clock := time.NewTicker(10 * time.Second)
+
+	metricsProvider := otel_util.InitMeterProvider(context.Background())
+	meter := metricsProvider.Meter("Gitstafette-Client")
+	// TODO: make this a histogram per repository
+	histogram, err := meter.Int64Histogram("CachedEvents", otelapi.WithDescription("a very nice histogram"))
+	if err != nil {
+		sublogger.Warn().Err(err).Msg("Encountered an error when creating histogram")
+	}
+
 	for {
 		select {
 		case <-clock.C:
@@ -106,6 +117,7 @@ func RelayCachedEvents(serviceContext *gcontext.ServiceContext, repositoryId str
 
 					// TODO add check on relay, so that we only set IsRelayed if we actually did
 					webhookEvent.IsRelayed = true
+					histogram.Record(ctx, 1)
 				}
 			}
 		case <-ctx.Done(): // Activated when ctx.Done() closes
@@ -286,6 +298,14 @@ func CleanupRelayedEvents(serviceContext *gcontext.ServiceContext) {
 	ctx := serviceContext.Context
 	clock := time.NewTicker(5 * time.Second)
 	timeAfterWhichWeCleanup := time.Minute * 2
+
+	metricsProvider := otel_util.InitMeterProvider(ctx)
+	meter := metricsProvider.Meter("Gitstafette")
+	cleanupRelayedEventsCounter, err := meter.Int64Counter("cleanup_relayed_events")
+	if err != nil {
+		sublogger.Warn().Err(err).Msg("Encountered an error when creating histogram")
+	}
+
 	for {
 		select {
 		case <-clock.C:
@@ -298,6 +318,7 @@ func CleanupRelayedEvents(serviceContext *gcontext.ServiceContext) {
 						sublogger.Info().Msgf("Event (%v::%v) was relayed %s ago, removing",
 							repositoryId, cachedEvent.ID, time.Since(cachedEvent.TimeRelayed).Round(time.Second))
 						cache.Store.Remove(repositoryId, cachedEvent)
+						cleanupRelayedEventsCounter.Add(ctx, 1)
 					}
 				}
 			}

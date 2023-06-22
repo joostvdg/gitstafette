@@ -12,15 +12,17 @@ import (
 	"github.com/joostvdg/gitstafette/internal/config"
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
 	grpc_internal "github.com/joostvdg/gitstafette/internal/grpc"
+	"github.com/joostvdg/gitstafette/internal/otel_util"
 	"github.com/joostvdg/gitstafette/internal/relay"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel/attribute"
 	codes2 "go.opentelemetry.io/otel/codes"
+	otelapi "go.opentelemetry.io/otel/metric"
 
-	//semconv "go.opentelemetry.io/otel/semconv/v1.18.0"
+	//semconv "go.opentelemetry.io/otel_util/semconv/v1.18.0"
 	"go.opentelemetry.io/otel/trace"
-	"sync"
+
 
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
@@ -36,12 +38,7 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/metric/global"
-	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	sdkresource "go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	api "github.com/joostvdg/gitstafette/api/v1"
@@ -56,8 +53,7 @@ const (
 )
 
 var (
-	resource          *sdkresource.Resource
-	initResourcesOnce sync.Once
+
 	tp *sdktrace.TracerProvider
 	mp *sdkmetric.MeterProvider
 )
@@ -109,6 +105,17 @@ func main() {
 		log.Fatal().Err(err).Msg("Malformed URL")
 	}
 
+
+	initSentry() // has to happen before we init Echo
+	var grpcHealthServer *grpc.Server
+	if *grpcHealthPort != *grpcPort {
+		grpcHealthServer = initializeGRPCHealthServer(*grpcHealthPort)
+	}
+	grpcServer := initializeGRPCServer(*grpcPort, tlsConfig, grpcHealthServer, ctx)
+	echoServer := initializeEchoServer(relayConfig, *port, *webhookHMAC)
+	log.Printf("Started http server on: %s, grpc server on: %s, and grpc health server on: %s\n", *port, *grpcPort, *grpcHealthPort)
+
+
 	serviceContext := &gcontext.ServiceContext{
 		Context: ctx,
 		Relay:   relayConfig,
@@ -121,15 +128,6 @@ func main() {
 			relay.InitiateRelay(serviceContext, repoId)
 		}
 	}
-	initSentry() // has to happen before we init Echo
-	var grpcHealthServer *grpc.Server
-	if *grpcHealthPort != *grpcPort {
-		grpcHealthServer = initializeGRPCHealthServer(*grpcHealthPort)
-	}
-	grpcServer := initializeGRPCServer(*grpcPort, tlsConfig, grpcHealthServer, ctx)
-	echoServer := initializeEchoServer(relayConfig, *port, *webhookHMAC)
-	log.Printf("Started http server on: %s, grpc server on: %s, and grpc health server on: %s\n", *port, *grpcPort, *grpcHealthPort)
-
 	go relay.CleanupRelayedEvents(serviceContext)
 
 	// Wait for interrupt signal to gracefully shut down the config with a timeout of 10 seconds.
@@ -253,17 +251,18 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *
 	}
 
 	go func(s *grpc.Server) {
-		tp := initTracerProvider()
+		ctx := context.Background()
+		tp = otel_util.InitTracerProvider(ctx)
 		defer func() {
-			if err := tp.Shutdown(context.Background()); err != nil {
+			if err := tp.Shutdown(ctx); err != nil {
 				log.Fatal().Err(err).Msg("Error shutting down Tracer provider")
 			}
 
 		}()
 
-		mp := initMeterProvider()
+		mp = otel_util.InitMeterProvider(ctx)
 		defer func() {
-			if err := mp.Shutdown(context.Background()); err != nil {
+			if err := mp.Shutdown(ctx); err != nil {
 				log.Fatal().Err(err).Msg("Error shutting down Meter provider")
 			}
 		}()
@@ -393,6 +392,11 @@ func (s server) WebhookEventPush(ignoredContext context.Context, request *api.We
 
 func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gitstafette_FetchWebhookEventsServer) error {
 	log.Printf("Relaying webhook events for repository %s", request.RepositoryId)
+	meter := mp.Meter("Gitstafette")
+	counter, _ := meter.Int64Counter(
+		"webhook_events_relayed",
+		otelapi.WithDescription("Number of webhook events relayed"),
+	)
 
 	durationSeconds := request.GetDurationSecs()
 	finish := time.Now().Add(time.Second * time.Duration(durationSeconds))
@@ -418,7 +422,6 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 			
 			events, err := retrieveCachedEventsForRepository(request.RepositoryId)
 
-			// TODO properly handle error
 			if err != nil {
 				sublogger.Info().Msgf("Could not get events for Repo: %v\n", err)
 				span.SetStatus(codes2.Error, "Could not get events for Repo")
@@ -435,6 +438,7 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 			}
 			sublogger.Info().Msgf("Send %v events to client (%v) for repo %v", len(events), request.ClientId, request.RepositoryId)
 
+			counter.Add(srv.Context(), int64(len(events)))
 			updateRelayStatus(events, request.RepositoryId)
 			span.AddEvent("SendEvents", trace.WithAttributes(attribute.Int("events", len(events))))
 			span.End()
@@ -506,51 +510,4 @@ func (s *HealthCheckService) Watch(req *grpc_health_v1.HealthCheckRequest, serve
 }
 
 
-func initResource() *sdkresource.Resource {
-	initResourcesOnce.Do(func() {
-		extraResources, _ := sdkresource.New(
-			context.Background(),
-			sdkresource.WithOS(),
-			sdkresource.WithProcess(),
-			sdkresource.WithContainer(),
-			sdkresource.WithHost(),
-		)
-		resource, _ = sdkresource.Merge(
-			sdkresource.Default(),
-			extraResources,
-		)
-	})
-	return resource
-}
-
-func initTracerProvider() *sdktrace.TracerProvider {
-	ctx := context.Background()
-	exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithInsecure(), otlptracegrpc.WithEndpoint("localhost:4317"))
-	if err != nil {
-		log.Fatal().Err(err).Msg("OTLP Trace gRPC Creation failed")
-	}
-
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(initResource()),
-	)
-	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
-	return tp
-}
-
-func initMeterProvider() *sdkmetric.MeterProvider {
-	ctx := context.Background()
-	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithInsecure(), otlpmetricgrpc.WithEndpoint("localhost:4317"))
-	if err != nil {
-		log.Fatal().Err(err).Msg("new otlp metric grpc exporter failed")
-	}
-
-	mp := sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
-		sdkmetric.WithResource(initResource()),
-	)
-	global.SetMeterProvider(mp)
-	return mp
-}
 

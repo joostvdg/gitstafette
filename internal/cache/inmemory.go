@@ -1,18 +1,33 @@
 package cache
 
 import (
+	"context"
 	api "github.com/joostvdg/gitstafette/api/v1"
+	"github.com/joostvdg/gitstafette/internal/otel_util"
+	otelapi "go.opentelemetry.io/otel/metric"
 	"sync"
 )
 
 type inMemoryStore struct {
-	mu     sync.Mutex
-	events map[string][]*api.WebhookEventInternal
+	mu              sync.Mutex
+	events          map[string][]*api.WebhookEventInternal
+	eventsHistogram otelapi.Int64Histogram
 }
 
 func NewInMemoryStore() *inMemoryStore {
 	i := new(inMemoryStore)
 	i.events = make(map[string][]*api.WebhookEventInternal)
+
+	metricsProvider := otel_util.InitMeterProvider(context.Background())
+	meter := metricsProvider.Meter("Gitstafette-Client")
+	// TODO: make this a histogram per repository
+	histogram, err := meter.Int64Histogram("CachedEvents", otelapi.WithDescription("a very nice histogram"))
+	if err != nil {
+		sublogger.Warn().Err(err).Msg("Encountered an error when creating histogram")
+	} else {
+		i.eventsHistogram = histogram
+	}
+
 	return i
 }
 
@@ -29,6 +44,15 @@ func (i *inMemoryStore) Store(repositoryId string, event *api.WebhookEventIntern
 			sublogger.Warn().Str("repo", repositoryId).Str("event", event.ID).Msg("Already stored this event, skipping")
 			return false
 		}
+	}
+
+	// TODO optimize this, as it is not very efficient
+	if i.eventsHistogram != nil {
+		totalEvents := 0
+		for repo := range i.events {
+			totalEvents += len(i.events[repo])
+		}
+		i.eventsHistogram.Record(context.Background(), int64(totalEvents))
 	}
 
 	event.IsRelayed = false
@@ -73,5 +97,16 @@ func (i *inMemoryStore) Remove(repositoryId string, event *api.WebhookEventInter
 		}
 	}
 	i.events[repositoryId] = updatedEvents
+
+	// TODO optimize this, as it is not very efficient
+	totalEvents := 0
+	for repo := range i.events {
+		totalEvents += len(i.events[repo])
+	}
+	if i.eventsHistogram != nil {
+		i.eventsHistogram.Record(context.Background(), int64(totalEvents))
+	}
+
+
 	return true
 }

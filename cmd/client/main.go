@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"flag"
 	"github.com/joostvdg/gitstafette/internal/otel_util"
 
@@ -81,6 +82,16 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	otelShutdown, err, _ := otel_util.SetupOTelSDK(ctx, "gsf-client", "0.0.1")
+	if err != nil {
+		log.Fatal().Err(err).Msg("Could not configure OTEL URL")
+	}
+	// Handle shutdown properly so nothing leaks.
+	defer func() {
+		err = errors.Join(err, otelShutdown(context.Background()))
+	}()
+
 	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPath, *relayHealthCheckPath, *relayPort, *relayProtocol, *relayInsecure)
 	if err != nil {
 		sublogger.Fatal().Err(err).Msg("Malformed Relay URL")

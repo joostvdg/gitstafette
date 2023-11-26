@@ -17,9 +17,11 @@ type inMemoryStore struct {
 func NewInMemoryStore() *inMemoryStore {
 	i := new(inMemoryStore)
 	i.events = make(map[string][]*api.WebhookEventInternal)
-
-	otel_util.SetupOTelSDK(context.Background(), "gitstafette", "0.0.1")
-	meter := otel_util.OTELMeterProvider.Meter("gitstafette")
+	_, err, mp := otel_util.SetupOTelSDK(context.Background(), "gsf-inmemory-store", "0.0.1")
+	if err != nil {
+		sublogger.Warn().Err(err).Msg("Encountered an error when setting up OTEL SDK")
+	}
+	meter := mp.Meter("gsf-inmemory-store")
 	// TODO: make this a histogram per repository
 	histogram, err := meter.Int64Histogram("CachedEvents", otelapi.WithDescription("a very nice histogram"))
 	if err != nil {

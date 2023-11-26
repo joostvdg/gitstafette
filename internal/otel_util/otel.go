@@ -22,14 +22,14 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 )
 
-var (
-	OTELMeterProvider *metric.MeterProvider
-)
-
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.
 // If it does not return an error, make sure to call shutdown for proper cleanup.
-func SetupOTelSDK(ctx context.Context, serviceName, serviceVersion string) (shutdown func(context.Context) error, err error) {
+func SetupOTelSDK(ctx context.Context, serviceName, serviceVersion string) (shutdown func(context.Context) error, err error, meterProvider *metric.MeterProvider) {
 	var shutdownFuncs []func(context.Context) error
+	otelConfig := NewOTELConfig()
+	if otelConfig.serviceName == "" {
+		otelConfig.serviceName = serviceName
+	}
 
 	// shutdown calls cleanup functions registered via shutdownFuncs.
 	// The errors from the calls are joined.
@@ -49,7 +49,7 @@ func SetupOTelSDK(ctx context.Context, serviceName, serviceVersion string) (shut
 	}
 
 	// Set up resource.
-	res, err := newResource(serviceName, serviceVersion)
+	res, err := newResource(otelConfig.serviceName, serviceVersion)
 	if err != nil {
 		handleErr(err)
 		return
@@ -69,7 +69,7 @@ func SetupOTelSDK(ctx context.Context, serviceName, serviceVersion string) (shut
 	otel.SetTracerProvider(tracerProvider)
 
 	// Set up meter provider.
-	meterProvider, err := newMeterProvider(res)
+	meterProvider, err = newMeterProvider(res)
 	if err != nil {
 		handleErr(err)
 		return
@@ -144,6 +144,5 @@ func newMeterProvider(res *resource.Resource) (*metric.MeterProvider, error) {
 			// Default is 1m. Set to 3s for demonstrative purposes.
 			metric.WithInterval(3*time.Second))),
 	)
-	OTELMeterProvider = meterProvider
 	return meterProvider, nil
 }

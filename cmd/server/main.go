@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	codes2 "go.opentelemetry.io/otel/codes"
 	otelapi "go.opentelemetry.io/otel/metric"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	//semconv "go.opentelemetry.io/otel_util/semconv/v1.18.0"
 	"go.opentelemetry.io/otel/trace"
@@ -47,6 +48,10 @@ import (
 const (
 	envSentry        = "SENTRY_DSN"
 	responseInterval = time.Second * 5
+)
+
+var (
+	mp *sdkmetric.MeterProvider
 )
 
 type server struct {
@@ -91,6 +96,17 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	var otelShutdown func(context.Context) error
+	otelShutdown, err, mp = otel_util.SetupOTelSDK(ctx, "gsf-client", "0.0.1")
+	if err != nil {
+		log.Fatal().Err(err).Msg("Could not configure OTEL URL")
+	}
+	// Handle shutdown properly so nothing leaks.
+	defer func() {
+		err = errors.Join(err, otelShutdown(context.Background()))
+	}()
+
 	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPath, *relayHealthCheckPath, *relayPort, *relayProtocol, *relayInsecure)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Malformed URL")
@@ -158,23 +174,6 @@ func initSentry() {
 }
 
 func initializeEchoServer(relayConfig *api.RelayConfig, port string, webhookHMAC string) *echo.Echo {
-
-	// Handle SIGINT (CTRL+C) gracefully.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
-	// Set up OpenTelemetry.
-	serviceName := "gitstafette-server-web"
-	serviceVersion := "0.1.0"
-	otelShutdown, err := otel_util.SetupOTelSDK(ctx, serviceName, serviceVersion)
-	if err != nil {
-		return nil
-	}
-	// Handle shutdown properly so nothing leaks.
-	defer func() {
-		err = errors.Join(err, otelShutdown(context.Background()))
-	}()
-
 	e := echo.New()
 	e.Use(func(e echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -384,7 +383,7 @@ func (s server) WebhookEventPush(ignoredContext context.Context, request *api.We
 
 func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gitstafette_FetchWebhookEventsServer) error {
 	log.Printf("Relaying webhook events for repository %s", request.RepositoryId)
-	meter := otel_util.OTELMeterProvider.Meter("gitstafette")
+	meter := mp.Meter("gitstafette")
 	counter, _ := meter.Int64Counter(
 		"webhook_events_relayed",
 		otelapi.WithDescription("Number of webhook events relayed"),

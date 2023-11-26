@@ -352,6 +352,51 @@ span.kind	internal
 * https://medium.com/@vcomposieux/opentelemetry-trace-and-instrument-your-application-code-3efd2a7b1de0
 * https://lightstep.com/blog/opentelemetry-go-all-you-need-to-know
 
+## Grafana Agent
+
+* https://grafana.com/docs/agent/latest/flow/setup/install/docker/
+
+```shell
+docker run \
+  -e AGENT_MODE=flow \
+  -v /home/joostvdg/projects/gitstafette/config.river:/etc/agent/config.river \
+  -p 12345:12345 \
+  grafana/agent:latest \
+  run --server.http.listen-addr=0.0.0.0:12345 /etc/agent/config.river
+```
+
+> "transport: Error while dialing: dial tcp: address http://localhost:12345: too many colons in address"
+
+
+```shell
+export OTEL_SERVICE_NAME=GSF-Server-1; export OTEL_PORT=12345; go \
+  run cmd/server/main.go --repositories 537845873 \
+  --port 1323 --grpcPort 50051 --grpcHealthPort 50051
+```
+
+```shell
+export OTEL_SERVICE_NAME=GSF-Client-1; export OTEL_PORT=12345; go \
+  run cmd/client/main.go --repo 537845873 --server "localhost" \
+  --port 50051 --insecure=true \
+  --streamWindow 15
+```
+
+## Otel Collector
+
+```shell
+export OTEL_SERVICE_NAME=GSF-Server-1; export OTEL_PORT=4317; go \
+  run cmd/server/main.go --repositories 537845873 \
+  --port 1323 --grpcPort 50051 --grpcHealthPort 50051
+```
+
+```shell
+export OTEL_SERVICE_NAME=GSF-Client-1; export OTEL_PORT=4317; go \
+  run cmd/client/main.go --repo 537845873 --server "localhost" \
+  --port 50051 --insecure=true \
+  --streamWindow 15
+```
+
+
 ## Handling Contexts
 
 * https://www.digitalocean.com/community/tutorials/how-to-use-contexts-in-go

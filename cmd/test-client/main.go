@@ -5,16 +5,10 @@ import (
 	"flag"
 	"fmt"
 	api "github.com/joostvdg/gitstafette/api/v1"
+	"github.com/joostvdg/gitstafette/internal/otel_util"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/metric/global"
-	"go.opentelemetry.io/otel/propagation"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdkresource "go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -29,25 +23,12 @@ var (
 )
 
 func main() {
+	otel_util.SetupOTelSDK(context.Background(), "test-client", "0.0.1")
 	grpcServerPort := flag.String("port", "50051", "Port used for connecting to the GRPC Server")
 	grpcServerHost := flag.String("server", "127.0.0.1", "Server host to connect to")
 	flag.Parse()
 
 	log.Printf("Connecting to GRPC Server at %s:%s", *grpcServerHost, *grpcServerPort)
-
-	tp := initTracerProvider()
-	defer func() {
-		if err := tp.Shutdown(context.Background()); err != nil {
-			log.Fatal().Err(err).Msg("Error shutting down Tracer provider")
-		}
-	}()
-
-	mp := initMeterProvider()
-	defer func() {
-		if err := mp.Shutdown(context.Background()); err != nil {
-			log.Fatal().Err(err).Msg("Error shutting down Meter provider")
-		}
-	}()
 
 	address := *grpcServerHost + ":" + *grpcServerPort
 	fetchWebhookStatus(address)
@@ -77,7 +58,7 @@ func fetchWebhookStatus(address string) error {
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
 	request := &api.WebhookEventStatusRequest{
-		ClientId: "test-client",
+		ClientId:     "test-client",
 		RepositoryId: "test-repo",
 	}
 
@@ -88,7 +69,6 @@ func fetchWebhookStatus(address string) error {
 	return err
 
 }
-
 
 func fetchWebhookStatuses(address string) error {
 	grpcOpts := createGrpcOptions()
@@ -140,7 +120,6 @@ func fetchWebhookStatuses(address string) error {
 	return err
 }
 
-
 func createGrpcOptions() []grpc.DialOption {
 	noCreds := insecure.NewCredentials()
 	grpcOpts := []grpc.DialOption{
@@ -150,56 +129,3 @@ func createGrpcOptions() []grpc.DialOption {
 	}
 	return grpcOpts
 }
-
-func initResource() *sdkresource.Resource {
-	initResourcesOnce.Do(func() {
-		extraResources, _ := sdkresource.New(
-			context.Background(),
-			sdkresource.WithOS(),
-			sdkresource.WithProcess(),
-			sdkresource.WithContainer(),
-			sdkresource.WithHost(),
-		)
-		resource, _ = sdkresource.Merge(
-			sdkresource.Default(),
-			extraResources,
-		)
-	})
-	return resource
-}
-
-func initTracerProvider() *sdktrace.TracerProvider {
-	ctx := context.Background()
-
-	exporter, err := otlptracegrpc.New(ctx,
-		otlptracegrpc.WithInsecure(),
-		otlptracegrpc.WithEndpoint("localhost:4317"),
-	)
-	if err != nil {
-		log.Fatal().Err(err).Msg("OTLP Trace gRPC Creation")
-	}
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(initResource()),
-	)
-	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
-	return tp
-}
-
-func initMeterProvider() *sdkmetric.MeterProvider {
-	ctx := context.Background()
-
-	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithInsecure(), otlpmetricgrpc.WithEndpoint("localhost:4317"))
-	if err != nil {
-		log.Fatal().Err(err).Msg("new otlp metric grpc exporter failed")
-	}
-
-	mp := sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
-		sdkmetric.WithResource(initResource()),
-	)
-	global.SetMeterProvider(mp)
-	return mp
-}
-

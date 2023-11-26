@@ -18,8 +18,8 @@ func NewInMemoryStore() *inMemoryStore {
 	i := new(inMemoryStore)
 	i.events = make(map[string][]*api.WebhookEventInternal)
 
-	metricsProvider := otel_util.InitMeterProvider(context.Background())
-	meter := metricsProvider.Meter("Gitstafette-Client")
+	otel_util.SetupOTelSDK(context.Background(), "gitstafette", "0.0.1")
+	meter := otel_util.OTELMeterProvider.Meter("gitstafette")
 	// TODO: make this a histogram per repository
 	histogram, err := meter.Int64Histogram("CachedEvents", otelapi.WithDescription("a very nice histogram"))
 	if err != nil {
@@ -106,7 +106,6 @@ func (i *inMemoryStore) Remove(repositoryId string, event *api.WebhookEventInter
 	if i.eventsHistogram != nil {
 		i.eventsHistogram.Record(context.Background(), int64(totalEvents))
 	}
-
 
 	return true
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"flag"
+	"github.com/joostvdg/gitstafette/internal/otel_util"
 
 	api "github.com/joostvdg/gitstafette/api/v1"
 	v1 "github.com/joostvdg/gitstafette/internal/api/v1"
@@ -17,13 +18,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/metric/global"
-	"go.opentelemetry.io/otel/propagation"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdkresource "go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
@@ -114,8 +109,9 @@ func main() {
 		sublogger.Fatal().Err(err).Msg("Invalid certificate configuration")
 	}
 
-	initTracerProvider(context.Background())
-	initMeterProvider(context.Background())
+	//otel_util.InitTracerProvider(context.Background())
+	//otel_util.InitMeterProvider(context.Background())
+	otel_util.SetupOTelSDK(context.Background(), "gitstafette-client", "0.0.1")
 	grpcServerConfig := api.CreateServerConfig(*grpcServerHost, *grpcServerPort, *streamWindow, insecure, oauthToken, tlsConfig)
 	grpcClientConfig := api.CreateClientConfig(*clientId, *repositoryId, *streamWindow, *webhookHMAC)
 
@@ -128,7 +124,7 @@ func main() {
 			log.Info().Msgf("[Main-in] Closing FetchWebhookEvents (context error: %v)", ctx.Err())
 			break
 		}
-		if ctx.Done() != nil  && ctx.Err() == nil {
+		if ctx.Done() != nil && ctx.Err() == nil {
 			log.Info().Msg("[Main] Restarting FetchWebhookEvents as context expired but no error occurred")
 			ctx, stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		}
@@ -154,7 +150,6 @@ func initHealthCheckServer(ctx context.Context, port string) {
 	go func() {
 		err := muxServer.ListenAndServe()
 
-		
 		if err != nil {
 			log.Fatal().Err(err).Msg("Could not start health check service")
 		}
@@ -221,7 +216,7 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 
 			if len(response.WebhookEvents) > 0 {
 
-			    _, span := otel.Tracer("Gitstafette-Client").Start(stream.Context() , "EventsReceived")
+				_, span := otel.Tracer("Gitstafette-Client").Start(stream.Context(), "EventsReceived")
 				span.AddEvent("EventsReceived", trace.WithAttributes(attribute.Int("events", len(response.WebhookEvents))))
 				for _, event := range response.WebhookEvents {
 
@@ -323,33 +318,3 @@ func initResource(ctx context.Context) *sdkresource.Resource {
 	})
 	return resource
 }
-
-func initTracerProvider(ctx context.Context) *sdktrace.TracerProvider {
-	exporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithInsecure(), otlptracegrpc.WithEndpoint("localhost:4317"))
-	if err != nil {
-		log.Fatal().Err(err).Msg("OTLP Trace gRPC Creation failed")
-	}
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(initResource(ctx)),
-	)
-	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
-	return tp
-}
-
-func initMeterProvider(ctx context.Context) *sdkmetric.MeterProvider {
-	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithInsecure(), otlpmetricgrpc.WithEndpoint("localhost:4317"))
-	if err != nil {
-		log.Fatal().Err(err).Msg("new otlp metric grpc exporter failed")
-	}
-
-	mp := sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
-		sdkmetric.WithResource(initResource(ctx)),
-	)
-	global.SetMeterProvider(mp)
-	return mp
-}
-
-

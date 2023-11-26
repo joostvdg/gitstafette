@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/getsentry/sentry-go"
@@ -23,7 +24,6 @@ import (
 	//semconv "go.opentelemetry.io/otel_util/semconv/v1.18.0"
 	"go.opentelemetry.io/otel/trace"
 
-
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -36,13 +36,10 @@ import (
 	"syscall"
 	"time"
 
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-
 	api "github.com/joostvdg/gitstafette/api/v1"
 	"github.com/labstack/echo/v4"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
 )
 
 // TODO add flags for target for Relay
@@ -50,12 +47,6 @@ import (
 const (
 	envSentry        = "SENTRY_DSN"
 	responseInterval = time.Second * 5
-)
-
-var (
-
-	tp *sdktrace.TracerProvider
-	mp *sdkmetric.MeterProvider
 )
 
 type server struct {
@@ -105,7 +96,6 @@ func main() {
 		log.Fatal().Err(err).Msg("Malformed URL")
 	}
 
-
 	initSentry() // has to happen before we init Echo
 	var grpcHealthServer *grpc.Server
 	if *grpcHealthPort != *grpcPort {
@@ -114,7 +104,6 @@ func main() {
 	grpcServer := initializeGRPCServer(*grpcPort, tlsConfig, grpcHealthServer, ctx)
 	echoServer := initializeEchoServer(relayConfig, *port, *webhookHMAC)
 	log.Printf("Started http server on: %s, grpc server on: %s, and grpc health server on: %s\n", *port, *grpcPort, *grpcHealthPort)
-
 
 	serviceContext := &gcontext.ServiceContext{
 		Context: ctx,
@@ -169,6 +158,23 @@ func initSentry() {
 }
 
 func initializeEchoServer(relayConfig *api.RelayConfig, port string, webhookHMAC string) *echo.Echo {
+
+	// Handle SIGINT (CTRL+C) gracefully.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	// Set up OpenTelemetry.
+	serviceName := "gitstafette-server-web"
+	serviceVersion := "0.1.0"
+	otelShutdown, err := otel_util.SetupOTelSDK(ctx, serviceName, serviceVersion)
+	if err != nil {
+		return nil
+	}
+	// Handle shutdown properly so nothing leaks.
+	defer func() {
+		err = errors.Join(err, otelShutdown(context.Background()))
+	}()
+
 	e := echo.New()
 	e.Use(func(e echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -210,7 +216,7 @@ var kasp = keepalive.ServerParameters{
 	MaxConnectionAge:      60 * time.Second, // If any connection is alive for more than 60 seconds, send a GOAWAY
 	MaxConnectionAgeGrace: 5 * time.Second,  // Allow 5 seconds for pending RPCs to complete before forcibly closing connections
 	Time:                  5 * time.Second,  // Ping the client if it is idle for 5 seconds to ensure the connection is still active
-	Timeout:               10 * time.Second,  // Wait 1 second for the ping ack before assuming the connection is dead
+	Timeout:               10 * time.Second, // Wait 1 second for the ping ack before assuming the connection is dead
 }
 
 func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
@@ -235,7 +241,7 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *
 	grpcServer := grpc.NewServer(
 		//grpc.KeepaliveEnforcementPolicy(kaep),
 		//grpc.KeepaliveParams(kasp),
-		grpc.ChainStreamInterceptor(grpc_internal.ValidateToken,grpc_internal.EventsServerStreamInterceptor,otelgrpc.StreamServerInterceptor()),
+		grpc.ChainStreamInterceptor(grpc_internal.ValidateToken, grpc_internal.EventsServerStreamInterceptor, otelgrpc.StreamServerInterceptor()),
 		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
 	)
 
@@ -251,21 +257,7 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *
 	}
 
 	go func(s *grpc.Server) {
-		ctx := context.Background()
-		tp = otel_util.InitTracerProvider(ctx)
-		defer func() {
-			if err := tp.Shutdown(ctx); err != nil {
-				log.Fatal().Err(err).Msg("Error shutting down Tracer provider")
-			}
-
-		}()
-
-		mp = otel_util.InitMeterProvider(ctx)
-		defer func() {
-			if err := mp.Shutdown(ctx); err != nil {
-				log.Fatal().Err(err).Msg("Error shutting down Meter provider")
-			}
-		}()
+		otel_util.SetupOTelSDK(context.Background(), "gitstafette", "0.0.1")
 
 		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
 		if err != nil {
@@ -330,9 +322,9 @@ func (s server) WebhookEventStatuses(request *api.WebhookEventStatusesRequest, s
 
 	log.Printf("Wait Interval is: %v", waitInterval)
 
-	spanCtx, span := otel.Tracer("Server").Start(ctx , "WebhookEventStatuses")
+	spanCtx, span := otel.Tracer("Server").Start(ctx, "WebhookEventStatuses")
 	span.AddEvent("Start")
-	events :=  []*api.WebhookEventStatusResponse{status01, status02, status03}
+	events := []*api.WebhookEventStatusResponse{status01, status02, status03}
 	lastEvent := len(events) - 1
 	currentEvent := 0
 
@@ -341,7 +333,7 @@ func (s server) WebhookEventStatuses(request *api.WebhookEventStatusesRequest, s
 		select {
 		case <-time.After(waitInterval):
 			eventInfo := fmt.Sprintf("Sent event %v of %v", currentEvent, lastEvent)
-			_, span := otel.Tracer("Server").Start(spanCtx , eventInfo)
+			_, span := otel.Tracer("Server").Start(spanCtx, eventInfo)
 			if currentEvent > lastEvent {
 				closed = true
 				break
@@ -392,7 +384,7 @@ func (s server) WebhookEventPush(ignoredContext context.Context, request *api.We
 
 func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gitstafette_FetchWebhookEventsServer) error {
 	log.Printf("Relaying webhook events for repository %s", request.RepositoryId)
-	meter := mp.Meter("Gitstafette")
+	meter := otel_util.OTELMeterProvider.Meter("gitstafette")
 	counter, _ := meter.Int64Counter(
 		"webhook_events_relayed",
 		otelapi.WithDescription("Number of webhook events relayed"),
@@ -417,9 +409,9 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 		closed := false
 		select {
 		case <-time.After(responseInterval):
-			_, span := otel.Tracer("Server").Start(srv.Context() , "retrieveCachedEventsForRepository")
+			_, span := otel.Tracer("Server").Start(srv.Context(), "retrieveCachedEventsForRepository")
 			sublogger.Info().Msgf("Fetching events for repo %v (with Span)", request.RepositoryId)
-			
+
 			events, err := retrieveCachedEventsForRepository(request.RepositoryId)
 
 			if err != nil {
@@ -508,6 +500,3 @@ func (s *HealthCheckService) Watch(req *grpc_health_v1.HealthCheckRequest, serve
 		Status: grpc_health_v1.HealthCheckResponse_SERVING,
 	})
 }
-
-
-

@@ -94,8 +94,8 @@ func RelayCachedEvents(serviceContext *gcontext.ServiceContext, repositoryId str
 	relay := serviceContext.Relay
 	clock := time.NewTicker(10 * time.Second)
 
-	metricsProvider := otel_util.InitMeterProvider(context.Background())
-	meter := metricsProvider.Meter("Gitstafette-Client")
+	otel_util.SetupOTelSDK(context.Background(), "gitstafette", "0.0.1")
+	meter := otel_util.OTELMeterProvider.Meter("gitstafette-client")
 	// TODO: make this a histogram per repository
 	histogram, err := meter.Int64Histogram("CachedEvents", otelapi.WithDescription("a very nice histogram"))
 	if err != nil {
@@ -299,8 +299,8 @@ func CleanupRelayedEvents(serviceContext *gcontext.ServiceContext) {
 	clock := time.NewTicker(5 * time.Second)
 	timeAfterWhichWeCleanup := time.Minute * 2
 
-	metricsProvider := otel_util.InitMeterProvider(ctx)
-	meter := metricsProvider.Meter("Gitstafette")
+	otel_util.SetupOTelSDK(context.Background(), "gitstafette", "0.0.1")
+	meter := otel_util.OTELMeterProvider.Meter("gitstafette")
 	cleanupRelayedEventsCounter, err := meter.Int64Counter("cleanup_relayed_events")
 	if err != nil {
 		sublogger.Warn().Err(err).Msg("Encountered an error when creating histogram")

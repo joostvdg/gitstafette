@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # Jaeger
+  jaeger:
+    image: jaegertracing/all-in-one
+    container_name: jaeger
+    command:
+      - "--memory.max-traces"
+      - "10000"
+      - "--query.base-path"
+      - "/jaeger/ui"
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+    restart: unless-stopped
+    ports:
+      - "${JAEGER_SERVICE_PORT}"                    # Jaeger UI
+      - "4317"                           # OTLP gRPC default port
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+#      - METRICS_STORAGE_TYPE=prometheus
+
+  # Grafana
+#  grafana:
+#    image: grafana/grafana:9.4.7
+#    container_name: grafana
+#    deploy:
+#      resources:
+#        limits:
+#          memory: 100M
+#    volumes:
+#      - ./config/grafana/grafana.ini:/etc/grafana/grafana.ini
+#      - ./config/grafana/provisioning/:/etc/grafana/provisioning/
+#    ports:
+#      - "${GRAFANA_SERVICE_PORT}"
+
+  # OpenTelemetry Collector
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:0.89.0
+    container_name: otel-col
+    deploy:
+      resources:
+        limits:
+          memory: 125M
+    restart: unless-stopped
+    command: [ "--config=/etc/otelcol-config.yml", "--config=/etc/otelcol-config-extras.yml" ]
+    volumes:
+      - ./config/otelcol-config.yml:/etc/otelcol-config.yml
+      - ./config/otelcol-config-extras.yml:/etc/otelcol-config-extras.yml
+    ports:
+      - "4317:4317"     # OTLP over gRPC receiver
+      - "4318:4318"     # OTLP over HTTP receiver
+      - "9464"          # Prometheus exporter
+      - "8888"          # metrics endpoint
+    depends_on:
+      - jaeger
+
+  # Prometheus
+#  prometheus:
+#    image: quay.io/prometheus/prometheus:v2.43.0
+#    container_name: prometheus
+#    command:
+#      - --web.console.templates=/etc/prometheus/consoles
+#      - --web.console.libraries=/etc/prometheus/console_libraries
+#      - --storage.tsdb.retention.time=1h
+#      - --config.file=/etc/prometheus/prometheus-config.yaml
+#      - --storage.tsdb.path=/prometheus
+#      - --web.enable-lifecycle
+#      - --web.route-prefix=/
+#      - --enable-feature=exemplar-storage
+#    volumes:
+#      - ./config/prometheus-config.yaml:/etc/prometheus/prometheus-config.yaml
+#    deploy:
+#      resources:
+#        limits:
+#          memory: 300M
+#    ports:
+#      - "${PROMETHEUS_SERVICE_PORT}:${PROMETHEUS_SERVICE_PORT}"

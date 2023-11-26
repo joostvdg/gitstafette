@@ -1,5 +1,5 @@
 # copied from: https://github.com/GoogleCloudPlatform/golang-samples/blob/main/run/grpc-server-streaming/Dockerfile
-FROM golang:1.19-buster as builder
+FROM golang:1.21-bookworm as builder
 ARG TARGETARCH
 ARG TARGETOS
 WORKDIR /go/src/gitstafette

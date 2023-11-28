@@ -27,7 +27,7 @@ func NewOTELConfig() *OTELConfig {
 	protocol := "http"
 	port := "4317"
 	grcpExporter := true
-	enabled := true
+	enabled := false
 
 	if osServiceName := os.Getenv(OTEL_SERVICE_NAME); osServiceName != "" {
 		serviceName = osServiceName

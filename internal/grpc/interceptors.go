@@ -1,20 +1,21 @@
 package grpc
 
 import (
+	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"github.com/rs/zerolog/log"
 	"os"
 	"strings"
 	"time"
 )
 
 const (
-	envOauthToken    = "OAUTH_TOKEN"
+	envOauthToken = "OAUTH_TOKEN"
 )
 
 type WrappedStream struct {
@@ -37,24 +38,18 @@ func NewWrappedStream(s grpc.ServerStream) grpc.ServerStream {
 
 func EventsServerStreamInterceptor(srv interface{}, serverStream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	ctx := serverStream.Context()
-	_, span := otel.Tracer("Gitstafette-Server").Start(ctx, info.FullMethod)
+	_, span := otel.Tracer("Server").Start(ctx, info.FullMethod, trace.WithSpanKind(trace.SpanKindServer))
 	log.Printf("====== [EventsServerStreamInterceptor] Send a message (Type: %T) at %s", srv, time.Now().Format(time.RFC3339))
 	span.SetAttributes(attribute.String("grpc.service", info.FullMethod))
 	span.SetAttributes(attribute.String("grpc.stream.type", "server"))
-
-	//err := handler(srv, NewWrappedStream(serverStream))
-	//if err != nil {
-	//	log.Printf("RPC failed with error %v", err)
-	//}
-	//return err
-	span.End( )
+	span.End()
 	return handler(srv, serverStream)
 }
 
 func ValidateToken(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	log.Info().Msg("Validating token for GRPC Stream Request")
 	ctx := ss.Context()
-	newCtx, span := otel.Tracer("Gitstafette-Server").Start(ctx, info.FullMethod)
+	newCtx, span := otel.Tracer("Server").Start(ctx, info.FullMethod, trace.WithSpanKind(trace.SpanKindServer))
 	span.SetAttributes(attribute.String("grpc.service", info.FullMethod))
 	span.SetAttributes(attribute.String("grpc.stream.type", "server"))
 	span.AddEvent("Validating token for GRPC Stream Request")
@@ -80,7 +75,7 @@ func ValidateToken(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServe
 		log.Warn().Msg("Validating token for GRPC Stream Request -> TOKEN MISSING")
 	}
 
-	span.End( )
+	span.End()
 	return handler(srv, ss)
 }
 

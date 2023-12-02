@@ -229,7 +229,7 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 
 			if len(response.WebhookEvents) > 0 {
 
-				_, span := otel.Tracer("Gitstafette-Client").Start(stream.Context(), "EventsReceived")
+				_, span := otel.Tracer("Client").Start(stream.Context(), "EventsReceived", trace.WithSpanKind(trace.SpanKindClient))
 				span.AddEvent("EventsReceived", trace.WithAttributes(attribute.Int("events", len(response.WebhookEvents))))
 				for _, event := range response.WebhookEvents {
 

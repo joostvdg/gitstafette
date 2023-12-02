@@ -323,7 +323,7 @@ func (s server) WebhookEventStatuses(request *api.WebhookEventStatusesRequest, s
 
 	log.Printf("Wait Interval is: %v", waitInterval)
 
-	spanCtx, span := otel.Tracer("Server").Start(ctx, "WebhookEventStatuses")
+	spanCtx, span := otel.Tracer("Server").Start(ctx, "WebhookEventStatuses", trace.WithSpanKind(trace.SpanKindServer))
 	span.AddEvent("Start")
 	events := []*api.WebhookEventStatusResponse{status01, status02, status03}
 	lastEvent := len(events) - 1
@@ -334,7 +334,7 @@ func (s server) WebhookEventStatuses(request *api.WebhookEventStatusesRequest, s
 		select {
 		case <-time.After(waitInterval):
 			eventInfo := fmt.Sprintf("Sent event %v of %v", currentEvent, lastEvent)
-			_, span := otel.Tracer("Server").Start(spanCtx, eventInfo)
+			_, span := otel.Tracer("Server").Start(spanCtx, eventInfo, trace.WithSpanKind(trace.SpanKindServer))
 			if currentEvent > lastEvent {
 				closed = true
 				break
@@ -410,7 +410,7 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 		closed := false
 		select {
 		case <-time.After(responseInterval):
-			_, span := otel.Tracer("Server").Start(srv.Context(), "retrieveCachedEventsForRepository")
+			_, span := otel.Tracer("Server").Start(srv.Context(), "retrieveCachedEventsForRepository", trace.WithSpanKind(trace.SpanKindServer))
 			sublogger.Info().Msgf("Fetching events for repo %v (with Span)", request.RepositoryId)
 
 			events, err := retrieveCachedEventsForRepository(request.RepositoryId)

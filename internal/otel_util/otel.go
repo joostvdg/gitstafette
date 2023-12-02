@@ -118,8 +118,9 @@ func newTraceProvider(res *resource.Resource) (*trace.TracerProvider, error) {
 	// Register the trace exporter with a TracerProvider, using a batch
 	// span processor to aggregate spans before export.
 	bsp := sdktrace.NewBatchSpanProcessor(traceExporter)
+	sampler := sdktrace.ParentBased(sdktrace.TraceIDRatioBased(0.2))
 	tracerProvider := sdktrace.NewTracerProvider(
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSampler(sampler),
 		sdktrace.WithResource(res),
 		sdktrace.WithSpanProcessor(bsp),
 	)

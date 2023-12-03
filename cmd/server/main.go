@@ -98,6 +98,7 @@ func main() {
 	defer stop()
 
 	if otelEnabled := os.Getenv("OTEL_ENABLED"); otelEnabled != "" {
+		log.Info().Msg("OTEL is enabled")
 		var otelShutdown func(context.Context) error
 		otelShutdown, err, mp = otel_util.SetupOTelSDK(ctx, "gsf-client", "0.0.1")
 		if err != nil {
@@ -107,6 +108,8 @@ func main() {
 		defer func() {
 			err = errors.Join(err, otelShutdown(context.Background()))
 		}()
+	} else {
+		log.Info().Msg("OTEL is disabled")
 	}
 
 	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPath, *relayHealthCheckPath, *relayPort, *relayProtocol, *relayInsecure)
@@ -240,23 +243,21 @@ func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
 
 func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *grpc.Server, ctx context.Context) *grpc.Server {
 	grpcServer := grpc.NewServer(
-		//grpc.KeepaliveEnforcementPolicy(kaep),
-		//grpc.KeepaliveParams(kasp),
-		grpc.ChainStreamInterceptor(grpc_internal.ValidateToken, grpc_internal.EventsServerStreamInterceptor),
+		grpc.ChainStreamInterceptor(grpc_internal.ValidateToken, otelgrpc.StreamServerInterceptor()),
+		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
 	)
 
 	if tlsConfig != nil {
 		serverCredentials := credentials.NewTLS(tlsConfig)
 		grpcServer = grpc.NewServer(
-			//grpc.KeepaliveEnforcementPolicy(kaep),
-			//grpc.KeepaliveParams(kasp),
 			grpc.Creds(serverCredentials),
-			grpc.ChainStreamInterceptor(grpc_internal.ValidateToken, grpc_internal.EventsServerStreamInterceptor),
+			grpc.ChainStreamInterceptor(grpc_internal.ValidateToken, otelgrpc.StreamServerInterceptor()),
+			grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
 		)
 	}
 
 	go func(s *grpc.Server) {
-		otel_util.SetupOTelSDK(context.Background(), "gsf-server", "0.0.1")
+		otel_util.SetupOTelSDK(ctx, "gsf-server", "0.0.1")
 
 		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
 		if err != nil {
@@ -396,7 +397,7 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 	ctx, stop := signal.NotifyContext(srv.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	span := trace.SpanFromContext(srv.Context())
+	_, span := otel.Tracer("Server").Start(ctx, "FetchWebhookEvents", trace.WithSpanKind(trace.SpanKindServer))
 	sublogger := log.With().
 		Str("span_id", span.SpanContext().SpanID().String()).
 		Str("trace_id", span.SpanContext().TraceID().String()).
@@ -408,7 +409,7 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 		closed := false
 		select {
 		case <-time.After(responseInterval):
-			_, span := otel.Tracer("Server").Start(srv.Context(), "retrieveCachedEventsForRepository", trace.WithSpanKind(trace.SpanKindServer))
+			//_, span := otel.Tracer("Server").Start(srv.Context(), "retrieveCachedEventsForRepository", trace.WithSpanKind(trace.SpanKindServer))
 			sublogger.Info().Msgf("Fetching events for repo %v (with Span)", request.RepositoryId)
 
 			events, err := retrieveCachedEventsForRepository(request.RepositoryId)
@@ -432,7 +433,6 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 			counter.Add(srv.Context(), int64(len(events)))
 			updateRelayStatus(events, request.RepositoryId)
 			span.AddEvent("SendEvents", trace.WithAttributes(attribute.Int("events", len(events))))
-			span.End()
 		case <-srv.Context().Done(): // Activated when ctx.Done() closes
 			sublogger.Info().Msgf("Closing FetchWebhookEvents (client context %s closed)", request.ClientId)
 			closed = true
@@ -449,6 +449,7 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 	}
 	sublogger.Info().Msgf("Reached %v, so closed context %s", finish, request.ClientId)
 	span.AddEvent("Finished", trace.WithAttributes(attribute.String("reason", "timeout")))
+	span.SetStatus(codes2.Ok, "Finished")
 	span.End()
 	return nil
 }

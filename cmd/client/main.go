@@ -122,9 +122,7 @@ func main() {
 		sublogger.Fatal().Err(err).Msg("Invalid certificate configuration")
 	}
 
-	//otel_util.InitTracerProvider(context.Background())
-	//otel_util.InitMeterProvider(context.Background())
-	otel_util.SetupOTelSDK(context.Background(), "gitstafette-client", "0.0.1")
+	otel_util.SetupOTelSDK(context.Background(), "gsf-client", "0.0.1")
 	grpcServerConfig := api.CreateServerConfig(*grpcServerHost, *grpcServerPort, *streamWindow, insecure, oauthToken, tlsConfig)
 	grpcClientConfig := api.CreateClientConfig(*clientId, *repositoryId, *streamWindow, *webhookHMAC)
 
@@ -197,7 +195,7 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 
 	finish := time.Now().Add(time.Second * time.Duration(clientConfig.StreamWindow))
 	contextClosed := false
-	span := trace.SpanFromContext(stream.Context())
+	_, span := otel.Tracer("Client").Start(stream.Context(), "handleWebhookEventStream", trace.WithSpanKind(trace.SpanKindClient))
 	sublogger := log.With().
 		Str("span_id", span.SpanContext().SpanID().String()).
 		Str("trace_id", span.SpanContext().TraceID().String()).

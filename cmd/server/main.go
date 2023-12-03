@@ -242,8 +242,7 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *
 	grpcServer := grpc.NewServer(
 		//grpc.KeepaliveEnforcementPolicy(kaep),
 		//grpc.KeepaliveParams(kasp),
-		grpc.ChainStreamInterceptor(grpc_internal.ValidateToken, grpc_internal.EventsServerStreamInterceptor, otelgrpc.StreamServerInterceptor()),
-		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(grpc_internal.ValidateToken, grpc_internal.EventsServerStreamInterceptor),
 	)
 
 	if tlsConfig != nil {
@@ -252,13 +251,12 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *
 			//grpc.KeepaliveEnforcementPolicy(kaep),
 			//grpc.KeepaliveParams(kasp),
 			grpc.Creds(serverCredentials),
-			grpc.ChainStreamInterceptor(grpc_internal.ValidateToken, otelgrpc.StreamServerInterceptor()), // grpc_internal.EventsServerStreamInterceptor
-			grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+			grpc.ChainStreamInterceptor(grpc_internal.ValidateToken, grpc_internal.EventsServerStreamInterceptor),
 		)
 	}
 
 	go func(s *grpc.Server) {
-		otel_util.SetupOTelSDK(context.Background(), "gitstafette", "0.0.1")
+		otel_util.SetupOTelSDK(context.Background(), "gsf-server", "0.0.1")
 
 		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
 		if err != nil {

@@ -21,6 +21,7 @@ import (
 	codes2 "go.opentelemetry.io/otel/codes"
 	otelapi "go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"google.golang.org/grpc/metadata"
 
 	//semconv "go.opentelemetry.io/otel_util/semconv/v1.18.0"
 	"go.opentelemetry.io/otel/trace"
@@ -40,7 +41,6 @@ import (
 	api "github.com/joostvdg/gitstafette/api/v1"
 	"github.com/labstack/echo/v4"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel"
 )
 
 // TODO add flags for target for Relay
@@ -51,7 +51,8 @@ const (
 )
 
 var (
-	mp *sdkmetric.MeterProvider
+	mp     *sdkmetric.MeterProvider
+	tracer trace.Tracer
 )
 
 type server struct {
@@ -100,7 +101,9 @@ func main() {
 	if otelEnabled := os.Getenv("OTEL_ENABLED"); otelEnabled != "" {
 		log.Info().Msg("OTEL is enabled")
 		var otelShutdown func(context.Context) error
-		otelShutdown, err, mp = otel_util.SetupOTelSDK(ctx, "gsf-client", "0.0.1")
+		otelShutdown, err, metricProvider, tp := otel_util.SetupOTelSDK(ctx, "gsf-client", "0.0.1")
+		mp = metricProvider
+		tracer = tp.Tracer("gsf-server")
 		if err != nil {
 			log.Fatal().Err(err).Msg("Could not configure OTEL URL")
 		}
@@ -243,16 +246,14 @@ func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
 
 func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *grpc.Server, ctx context.Context) *grpc.Server {
 	grpcServer := grpc.NewServer(
-		grpc.ChainStreamInterceptor(grpc_internal.ValidateToken, otelgrpc.StreamServerInterceptor()),
-		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+		grpc.ChainStreamInterceptor(grpc_internal.ValidateToken),
 	)
 
 	if tlsConfig != nil {
 		serverCredentials := credentials.NewTLS(tlsConfig)
 		grpcServer = grpc.NewServer(
 			grpc.Creds(serverCredentials),
-			grpc.ChainStreamInterceptor(grpc_internal.ValidateToken, otelgrpc.StreamServerInterceptor()),
-			grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+			grpc.ChainStreamInterceptor(grpc_internal.ValidateToken),
 		)
 	}
 
@@ -322,7 +323,7 @@ func (s server) WebhookEventStatuses(request *api.WebhookEventStatusesRequest, s
 
 	log.Printf("Wait Interval is: %v", waitInterval)
 
-	spanCtx, span := otel.Tracer("Server").Start(ctx, "WebhookEventStatuses", trace.WithSpanKind(trace.SpanKindServer))
+	spanCtx, span := tracer.Start(ctx, "WebhookEventStatuses", trace.WithSpanKind(trace.SpanKindServer))
 	span.AddEvent("Start")
 	events := []*api.WebhookEventStatusResponse{status01, status02, status03}
 	lastEvent := len(events) - 1
@@ -333,7 +334,7 @@ func (s server) WebhookEventStatuses(request *api.WebhookEventStatusesRequest, s
 		select {
 		case <-time.After(waitInterval):
 			eventInfo := fmt.Sprintf("Sent event %v of %v", currentEvent, lastEvent)
-			_, span := otel.Tracer("Server").Start(spanCtx, eventInfo, trace.WithSpanKind(trace.SpanKindServer))
+			_, span := tracer.Start(spanCtx, eventInfo, trace.WithSpanKind(trace.SpanKindServer))
 			if currentEvent > lastEvent {
 				closed = true
 				break
@@ -397,10 +398,26 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 	ctx, stop := signal.NotifyContext(srv.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	_, span := otel.Tracer("Server").Start(ctx, "FetchWebhookEvents", trace.WithSpanKind(trace.SpanKindServer))
+	contextForFirstSpan := srv.Context()
+	md, ok := metadata.FromIncomingContext(srv.Context())
+	if !ok {
+		md = metadata.MD{}
+	}
+	_, traceContext := otelgrpc.Extract(contextForFirstSpan, &md)
+	otelgrpc.Inject(contextForFirstSpan, &md)
+	name, attr, _ := otel_util.TelemetryAttributes("FetchWebhookEvents", otel_util.PeerFromCtx(contextForFirstSpan))
+	startOpts := append([]trace.SpanStartOption{
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(attr...),
+	})
+
+	spanParentContext := trace.ContextWithRemoteSpanContext(contextForFirstSpan, traceContext)
+	spanContext, span := tracer.Start(spanParentContext, name, startOpts...)
+	defer span.End()
 	sublogger := log.With().
 		Str("span_id", span.SpanContext().SpanID().String()).
 		Str("trace_id", span.SpanContext().TraceID().String()).
+		Str("incoming_trace_id", traceContext.TraceID().String()).
 		Logger()
 
 	log.Printf("Response Interval is: %v", responseInterval)
@@ -409,7 +426,8 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 		closed := false
 		select {
 		case <-time.After(responseInterval):
-			//_, span := otel.Tracer("Server").Start(srv.Context(), "retrieveCachedEventsForRepository", trace.WithSpanKind(trace.SpanKindServer))
+			_, span := tracer.Start(spanContext, "retrieveCachedEventsForRepository", trace.WithSpanKind(trace.SpanKindServer))
+
 			sublogger.Info().Msgf("Fetching events for repo %v (with Span)", request.RepositoryId)
 
 			events, err := retrieveCachedEventsForRepository(request.RepositoryId)
@@ -433,6 +451,7 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 			counter.Add(srv.Context(), int64(len(events)))
 			updateRelayStatus(events, request.RepositoryId)
 			span.AddEvent("SendEvents", trace.WithAttributes(attribute.Int("events", len(events))))
+			span.End()
 		case <-srv.Context().Done(): // Activated when ctx.Done() closes
 			sublogger.Info().Msgf("Closing FetchWebhookEvents (client context %s closed)", request.ClientId)
 			closed = true

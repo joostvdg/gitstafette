@@ -17,7 +17,7 @@ type inMemoryStore struct {
 func NewInMemoryStore() *inMemoryStore {
 	i := new(inMemoryStore)
 	i.events = make(map[string][]*api.WebhookEventInternal)
-	_, err, mp := otel_util.SetupOTelSDK(context.Background(), "gsf-inmemory-store", "0.0.1")
+	_, err, mp, _ := otel_util.SetupOTelSDK(context.Background(), "gsf-inmemory-store", "0.0.1")
 	if err != nil {
 		sublogger.Warn().Err(err).Msg("Encountered an error when setting up OTEL SDK")
 	}

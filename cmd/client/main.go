@@ -7,7 +7,9 @@ import (
 	"errors"
 	"flag"
 	"github.com/joostvdg/gitstafette/internal/otel_util"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/codes"
+	"google.golang.org/grpc/metadata"
 
 	api "github.com/joostvdg/gitstafette/api/v1"
 	v1 "github.com/joostvdg/gitstafette/internal/api/v1"
@@ -17,7 +19,6 @@ import (
 	"github.com/joostvdg/gitstafette/internal/relay"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdkresource "go.opentelemetry.io/otel/sdk/resource"
@@ -41,6 +42,8 @@ import (
 // TODO do not close if we have not relayed our events yet!
 
 var requestInterval = time.Second * 5
+
+var tracer trace.Tracer
 
 const envOauthToken = "OAUTH_TOKEN"
 
@@ -86,7 +89,8 @@ func main() {
 
 	if otelEnabled := os.Getenv("OTEL_ENABLED"); otelEnabled != "" {
 		sublogger.Info().Msg("OTEL is enabled")
-		otelShutdown, err, _ := otel_util.SetupOTelSDK(ctx, "gsf-client", "0.0.1")
+		otelShutdown, err, _, tp := otel_util.SetupOTelSDK(ctx, "gsf-client", "0.0.1")
+		tracer = tp.Tracer("gsf-client")
 		if err != nil {
 			log.Fatal().Err(err).Msg("Could not configure OTEL URL")
 		}
@@ -126,7 +130,6 @@ func main() {
 		sublogger.Fatal().Err(err).Msg("Invalid certificate configuration")
 	}
 
-	otel_util.SetupOTelSDK(context.Background(), "gsf-client", "0.0.1")
 	grpcServerConfig := api.CreateServerConfig(*grpcServerHost, *grpcServerPort, *streamWindow, insecure, oauthToken, tlsConfig)
 	grpcClientConfig := api.CreateClientConfig(*clientId, *repositoryId, *streamWindow, *webhookHMAC)
 
@@ -184,6 +187,27 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 	}
 	defer conn.Close()
 
+	name, attr, _ := otel_util.TelemetryAttributes("handleWebhookEventStream", conn.Target())
+	startOpts := append([]trace.SpanStartOption{
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attr...),
+	})
+
+	spanParentContext := trace.ContextWithRemoteSpanContext(mainCtx, trace.SpanContextFromContext(mainCtx))
+	spanContext, span := tracer.Start(spanParentContext, name, startOpts...)
+	md, ok := metadata.FromOutgoingContext(spanContext)
+	if !ok {
+		md = metadata.MD{}
+	}
+	otelgrpc.Inject(spanContext, &md)
+	spanContext = metadata.NewOutgoingContext(spanContext, md)
+	defer span.End()
+	sublogger := log.With().
+		Str("span_id", span.SpanContext().SpanID().String()).
+		Str("trace_id", span.SpanContext().TraceID().String()).
+		Logger()
+	sublogger.Info().Msg("[handleWebhookEventStream] Starting FetchWebhookEvents")
+
 	client := api.NewGitstafetteClient(conn)
 	request := &api.WebhookEventsRequest{
 		ClientId:            clientConfig.ClientID,
@@ -192,18 +216,13 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 		DurationSecs:        uint32(serverConfig.StreamWindow),
 	}
 
-	stream, err := client.FetchWebhookEvents(mainCtx, request)
+	stream, err := client.FetchWebhookEvents(spanContext, request)
 	if err != nil {
 		log.Fatal().Err(err).Msg("could not fetch webhook events")
 	}
 
 	finish := time.Now().Add(time.Second * time.Duration(clientConfig.StreamWindow))
 	contextClosed := false
-	spanContext, span := otel.Tracer("Client").Start(stream.Context(), "handleWebhookEventStream", trace.WithSpanKind(trace.SpanKindClient))
-	sublogger := log.With().
-		Str("span_id", span.SpanContext().SpanID().String()).
-		Str("trace_id", span.SpanContext().TraceID().String()).
-		Logger()
 
 	for time.Now().Before(finish) {
 		select {
@@ -232,6 +251,7 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 			if len(response.WebhookEvents) > 0 {
 
 				_, span := otel.Tracer("Client").Start(spanContext, "EventsReceived", trace.WithSpanKind(trace.SpanKindClient))
+				defer span.End()
 				span.AddEvent("EventsReceived", trace.WithAttributes(attribute.Int("events", len(response.WebhookEvents))))
 				for _, event := range response.WebhookEvents {
 
@@ -245,7 +265,7 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 						event.EventId, eventIsValid)
 					cache.Event(clientConfig.RepositoryId, event)
 				}
-				span.End()
+
 			}
 		case <-stream.Context().Done():
 			span.AddEvent("stream context done")
@@ -268,13 +288,11 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 		sublogger.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents (stream context error)")
 		span.SetStatus(codes.Error, "Stream Context Error")
 		span.AddEvent("finish")
-		span.End()
 		return stream.Context().Err()
 	}
 	sublogger.Info().Msg("[handleWebhookEventStream] Closing FetchWebhookEvents")
 	span.SetStatus(codes.Ok, "OK")
 	span.AddEvent("finish")
-	span.End()
 	return nil
 }
 
@@ -290,8 +308,8 @@ func createGrpcOptions(serverConfig *api.GRPCServerConfig) []grpc.DialOption {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithAuthority(serverConfig.Host))
 	//opts = append(opts, grpc.WithKeepaliveParams(kacp))
-	opts = append(opts, grpc.WithChainStreamInterceptor(otelgrpc.StreamClientInterceptor()))
-	opts = append(opts, grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()))
+	//opts = append(opts, grpc.WithChainStreamInterceptor(otelgrpc.StreamClientInterceptor()))
+	//opts = append(opts, grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()))
 
 	if serverConfig.OAuthToken != "" {
 		rpcCreds := oauth.NewOauthAccess(&oauth2.Token{AccessToken: serverConfig.OAuthToken})

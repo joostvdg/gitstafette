@@ -94,7 +94,7 @@ func RelayCachedEvents(serviceContext *gcontext.ServiceContext, repositoryId str
 	relay := serviceContext.Relay
 	clock := time.NewTicker(10 * time.Second)
 
-	_, _, meterProvider := otel_util.SetupOTelSDK(context.Background(), "gsf-relay", "0.0.1")
+	_, _, meterProvider, _ := otel_util.SetupOTelSDK(context.Background(), "gsf-relay", "0.0.1")
 	meter := meterProvider.Meter("gsf-relay")
 	// TODO: make this a histogram per repository
 	histogram, err := meter.Int64Histogram("CachedEvents", otelapi.WithDescription("a very nice histogram"))
@@ -299,7 +299,7 @@ func CleanupRelayedEvents(serviceContext *gcontext.ServiceContext) {
 	clock := time.NewTicker(5 * time.Second)
 	timeAfterWhichWeCleanup := time.Minute * 2
 
-	_, _, meterProvider := otel_util.SetupOTelSDK(context.Background(), "gsf-relay", "0.0.1")
+	_, _, meterProvider, _ := otel_util.SetupOTelSDK(context.Background(), "gsf-relay", "0.0.1")
 	meter := meterProvider.Meter("gsf-inmemory-store")
 	cleanupRelayedEventsCounter, err := meter.Int64Counter("cleanup_relayed_events")
 	if err != nil {

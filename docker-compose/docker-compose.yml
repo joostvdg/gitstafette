@@ -46,7 +46,7 @@ services:
   gitstafette-server:
     restart: unless-stopped
     init: true
-    image: ghcr.io/joostvdg/gitstafette/server:0.1.0-a2f1fc2
+    image: ghcr.io/joostvdg/gitstafette/server:0.1.0-a5fd3aa
     command: [
       "--repositories=537845873,478599060",
       "--grpcPort=50051",

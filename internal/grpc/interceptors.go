@@ -39,25 +39,28 @@ func NewWrappedStream(s grpc.ServerStream) grpc.ServerStream {
 func EventsServerStreamInterceptor(srv interface{}, serverStream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	ctx := serverStream.Context()
 	_, span := otel.Tracer("Server").Start(ctx, info.FullMethod, trace.WithSpanKind(trace.SpanKindServer))
+	defer span.End()
 	log.Printf("====== [EventsServerStreamInterceptor] Send a message (Type: %T) at %s", srv, time.Now().Format(time.RFC3339))
 	span.SetAttributes(attribute.String("grpc.service", info.FullMethod))
 	span.SetAttributes(attribute.String("grpc.stream.type", "server"))
-	span.End()
+	//name, attr, _ := otel_util.TelemetryAttributes(info.FullMethod, otel_util.PeerFromCtx(ctx))
+
 	return handler(srv, serverStream)
 }
 
 func ValidateToken(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	log.Info().Msg("Validating token for GRPC Stream Request")
-	ctx := ss.Context()
-	newCtx, span := otel.Tracer("Server").Start(ctx, info.FullMethod, trace.WithSpanKind(trace.SpanKindServer))
-	span.SetAttributes(attribute.String("grpc.service", info.FullMethod))
-	span.SetAttributes(attribute.String("grpc.stream.type", "server"))
-	span.AddEvent("Validating token for GRPC Stream Request")
+	//ctx := ss.Context()
+	//newCtx, span := otel.Tracer("Server").Start(ctx, info.FullMethod, trace.WithSpanKind(trace.SpanKindServer))
+	//defer span.End()
+	//span.SetAttributes(attribute.String("grpc.service", info.FullMethod))
+	//span.SetAttributes(attribute.String("grpc.stream.type", "server"))
+	//span.AddEvent("Validating token for GRPC Stream Request")
 
 	oauthToken, oauthOk := os.LookupEnv(envOauthToken)
 	if oauthOk {
 		log.Printf("Validating token for GRPC Stream Request -> TOKEN FOUND")
-		md, ok := metadata.FromIncomingContext(newCtx)
+		md, ok := metadata.FromIncomingContext(ss.Context())
 		if !ok {
 			errorMessage := "missing metadata when validating OAuth Token"
 			log.Warn().Msg(errorMessage)
@@ -75,7 +78,6 @@ func ValidateToken(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServe
 		log.Warn().Msg("Validating token for GRPC Stream Request -> TOKEN MISSING")
 	}
 
-	span.End()
 	return handler(srv, ss)
 }
 

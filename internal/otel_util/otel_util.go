@@ -1,6 +1,10 @@
 package otel_util
 
 import (
+	"context"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/metadata"
 	"os"
 )
 
@@ -71,4 +75,41 @@ func (o *OTELConfig) GetOTELEndpoint() string {
 	// else return the endpoint
 	// return o.protocol + "://" + o.hostName + ":" + o.port
 	return o.hostName + ":" + o.port
+}
+
+func StartSpanFromContext(ctx context.Context, tracer trace.Tracer, serviceNames string, spanKind trace.SpanKind) (trace.SpanContext, context.Context, trace.Span) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		md = metadata.MD{}
+	}
+	_, traceContext := otelgrpc.Extract(ctx, &md)
+	otelgrpc.Inject(ctx, &md)
+	name, attr, _ := TelemetryAttributes(serviceNames, PeerFromCtx(ctx))
+	startOpts := append([]trace.SpanStartOption{
+		trace.WithSpanKind(spanKind),
+		trace.WithAttributes(attr...),
+	})
+
+	spanParentContext := trace.ContextWithRemoteSpanContext(ctx, traceContext)
+	spanContext, span := tracer.Start(spanParentContext, name, startOpts...)
+	return traceContext, spanContext, span
+}
+
+func StartClientSpan(ctx context.Context, tracer trace.Tracer, serviceName string, connectionTarget string) (context.Context, trace.Span) {
+	name, attr, _ := TelemetryAttributes(serviceName, connectionTarget)
+	startOpts := append([]trace.SpanStartOption{
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attr...),
+	})
+
+	spanParentContext := trace.ContextWithRemoteSpanContext(ctx, trace.SpanContextFromContext(ctx))
+	spanContext, span := tracer.Start(spanParentContext, name, startOpts...)
+	md, ok := metadata.FromOutgoingContext(spanContext)
+	if !ok {
+		md = metadata.MD{}
+	}
+
+	otelgrpc.Inject(spanContext, &md)
+	spanContext = metadata.NewOutgoingContext(spanContext, md)
+	return spanContext, span
 }

@@ -21,8 +21,6 @@ import (
 	codes2 "go.opentelemetry.io/otel/codes"
 	otelapi "go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"google.golang.org/grpc/metadata"
-
 	//semconv "go.opentelemetry.io/otel_util/semconv/v1.18.0"
 	"go.opentelemetry.io/otel/trace"
 
@@ -394,33 +392,19 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 	durationSeconds := request.GetDurationSecs()
 	finish := time.Now().Add(time.Second * time.Duration(durationSeconds))
 	log.Printf("Stream is alive from %v to %v", time.Now(), finish)
+	log.Printf("Response Interval is: %v", responseInterval)
 
 	ctx, stop := signal.NotifyContext(srv.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	contextForFirstSpan := srv.Context()
-	md, ok := metadata.FromIncomingContext(srv.Context())
-	if !ok {
-		md = metadata.MD{}
-	}
-	_, traceContext := otelgrpc.Extract(contextForFirstSpan, &md)
-	otelgrpc.Inject(contextForFirstSpan, &md)
-	name, attr, _ := otel_util.TelemetryAttributes("FetchWebhookEvents", otel_util.PeerFromCtx(contextForFirstSpan))
-	startOpts := append([]trace.SpanStartOption{
-		trace.WithSpanKind(trace.SpanKindServer),
-		trace.WithAttributes(attr...),
-	})
-
-	spanParentContext := trace.ContextWithRemoteSpanContext(contextForFirstSpan, traceContext)
-	spanContext, span := tracer.Start(spanParentContext, name, startOpts...)
+	traceContext, spanContext, span := otel_util.StartSpanFromContext(srv.Context(), tracer, "FetchWebhookEvents", trace.SpanKindServer)
 	defer span.End()
+
 	sublogger := log.With().
 		Str("span_id", span.SpanContext().SpanID().String()).
 		Str("trace_id", span.SpanContext().TraceID().String()).
 		Str("incoming_trace_id", traceContext.TraceID().String()).
 		Logger()
-
-	log.Printf("Response Interval is: %v", responseInterval)
 
 	for time.Now().Before(finish) {
 		closed := false

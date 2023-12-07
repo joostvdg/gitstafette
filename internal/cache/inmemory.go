@@ -17,9 +17,12 @@ type inMemoryStore struct {
 func NewInMemoryStore() *inMemoryStore {
 	i := new(inMemoryStore)
 	i.events = make(map[string][]*api.WebhookEventInternal)
+	// TODO: filter on OTEL enabled
 	_, err, mp, _ := otel_util.SetupOTelSDK(context.Background(), "gsf-inmemory-store", "0.0.1")
 	if err != nil {
 		sublogger.Warn().Err(err).Msg("Encountered an error when setting up OTEL SDK")
+	} else {
+		sublogger.Info().Msg("OTEL SDK setup successfully")
 	}
 	meter := mp.Meter("gsf-inmemory-store")
 	// TODO: make this a histogram per repository

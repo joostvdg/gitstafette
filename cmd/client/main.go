@@ -6,21 +6,18 @@ import (
 	"crypto/x509"
 	"errors"
 	"flag"
-	"github.com/joostvdg/gitstafette/internal/otel_util"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel/codes"
-	"google.golang.org/grpc/metadata"
-
 	api "github.com/joostvdg/gitstafette/api/v1"
 	v1 "github.com/joostvdg/gitstafette/internal/api/v1"
 	"github.com/joostvdg/gitstafette/internal/cache"
 	"github.com/joostvdg/gitstafette/internal/config"
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
+	"github.com/joostvdg/gitstafette/internal/otel_util"
 	"github.com/joostvdg/gitstafette/internal/relay"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	sdkresource "go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/oauth2"
@@ -187,20 +184,10 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 	}
 	defer conn.Close()
 
-	name, attr, _ := otel_util.TelemetryAttributes("handleWebhookEventStream", conn.Target())
-	startOpts := append([]trace.SpanStartOption{
-		trace.WithSpanKind(trace.SpanKindClient),
-		trace.WithAttributes(attr...),
-	})
-
-	spanParentContext := trace.ContextWithRemoteSpanContext(mainCtx, trace.SpanContextFromContext(mainCtx))
-	spanContext, span := tracer.Start(spanParentContext, name, startOpts...)
-	md, ok := metadata.FromOutgoingContext(spanContext)
-	if !ok {
-		md = metadata.MD{}
-	}
-	otelgrpc.Inject(spanContext, &md)
-	spanContext = metadata.NewOutgoingContext(spanContext, md)
+	// TODO: cleanup the span config -> verify we don't need to retrieve the span context from the context (as we do for the serverside)
+	// TODO 2: verify if we need to add the span context to the metadata
+	// TODO 3: verify if this still shows up correctly in the service graph
+	spanContext, span := otel_util.StartClientSpan(mainCtx, tracer, "handleWebhookEventStream", conn.Target())
 	defer span.End()
 	sublogger := log.With().
 		Str("span_id", span.SpanContext().SpanID().String()).

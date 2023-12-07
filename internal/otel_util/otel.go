@@ -102,6 +102,9 @@ func newPropagator() propagation.TextMapPropagator {
 
 func newTraceProvider(res *resource.Resource) (*trace.TracerProvider, error) {
 	otelConfig := NewOTELConfig()
+
+	// Set up a trace exporter
+
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
@@ -111,18 +114,26 @@ func newTraceProvider(res *resource.Resource) (*trace.TracerProvider, error) {
 		grpc.WithBlock(),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create gRPC connection to collector: %w", err)
+		if otelConfig.enabled {
+			return nil, fmt.Errorf("failed to create gRPC connection to collector: %w", err)
+		} else {
+			log.Warn().Msg("failed to create gRPC connection to collector, but OTEL is disabled")
+		}
 	}
 
-	// Set up a trace exporter
 	traceExporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithGRPCConn(conn))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create trace exporter: %w", err)
+		if otelConfig.enabled {
+			return nil, fmt.Errorf("failed to create trace exporter: %w", err)
+		} else {
+			log.Warn().Msg("failed to create trace exporter, but OTEL is disabled")
+		}
 	}
 
 	// Register the trace exporter with a TracerProvider, using a batch
 	// span processor to aggregate spans before export.
 	bsp := sdktrace.NewBatchSpanProcessor(traceExporter)
+
 	sampler := sdktrace.ParentBased(sdktrace.TraceIDRatioBased(0.9))
 	tracerProvider := sdktrace.NewTracerProvider(
 		sdktrace.WithSampler(sampler),

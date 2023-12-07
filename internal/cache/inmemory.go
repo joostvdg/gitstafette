@@ -17,7 +17,10 @@ type inMemoryStore struct {
 func NewInMemoryStore() *inMemoryStore {
 	i := new(inMemoryStore)
 	i.events = make(map[string][]*api.WebhookEventInternal)
-	// TODO: filter on OTEL enabled
+
+	if !otel_util.IsOTelEnabled() {
+		return i
+	}
 	_, err, mp, _ := otel_util.SetupOTelSDK(context.Background(), "gsf-inmemory-store", "0.0.1")
 	if err != nil {
 		sublogger.Warn().Err(err).Msg("Encountered an error when setting up OTEL SDK")
@@ -57,7 +60,9 @@ func (i *inMemoryStore) Store(repositoryId string, event *api.WebhookEventIntern
 		for repo := range i.events {
 			totalEvents += len(i.events[repo])
 		}
-		i.eventsHistogram.Record(context.Background(), int64(totalEvents))
+		if otel_util.IsOTelEnabled() {
+			i.eventsHistogram.Record(context.Background(), int64(totalEvents))
+		}
 	}
 
 	event.IsRelayed = false
@@ -108,7 +113,7 @@ func (i *inMemoryStore) Remove(repositoryId string, event *api.WebhookEventInter
 	for repo := range i.events {
 		totalEvents += len(i.events[repo])
 	}
-	if i.eventsHistogram != nil {
+	if otel_util.IsOTelEnabled() && i.eventsHistogram != nil {
 		i.eventsHistogram.Record(context.Background(), int64(totalEvents))
 	}
 

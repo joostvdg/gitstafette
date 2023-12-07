@@ -299,11 +299,15 @@ func CleanupRelayedEvents(serviceContext *gcontext.ServiceContext) {
 	clock := time.NewTicker(5 * time.Second)
 	timeAfterWhichWeCleanup := time.Minute * 2
 
-	_, _, meterProvider, _ := otel_util.SetupOTelSDK(context.Background(), "gsf-relay", "0.0.1")
-	meter := meterProvider.Meter("gsf-inmemory-store")
-	cleanupRelayedEventsCounter, err := meter.Int64Counter("cleanup_relayed_events")
-	if err != nil {
-		sublogger.Warn().Err(err).Msg("Encountered an error when creating histogram")
+	var cleanupRelayedEventsCounter otelapi.Int64Counter
+	if otel_util.IsOTelEnabled() {
+		_, _, meterProvider, _ := otel_util.SetupOTelSDK(context.Background(), "gsf-relay", "0.0.1")
+		meter := meterProvider.Meter("gsf-inmemory-store")
+		err := error(nil)
+		cleanupRelayedEventsCounter, err = meter.Int64Counter("cleanup_relayed_events")
+		if err != nil {
+			sublogger.Warn().Err(err).Msg("Encountered an error when creating histogram")
+		}
 	}
 
 	for {
@@ -318,7 +322,9 @@ func CleanupRelayedEvents(serviceContext *gcontext.ServiceContext) {
 						sublogger.Info().Msgf("Event (%v::%v) was relayed %s ago, removing",
 							repositoryId, cachedEvent.ID, time.Since(cachedEvent.TimeRelayed).Round(time.Second))
 						cache.Store.Remove(repositoryId, cachedEvent)
-						cleanupRelayedEventsCounter.Add(ctx, 1)
+						if otel_util.IsOTelEnabled() {
+							cleanupRelayedEventsCounter.Add(ctx, 1)
+						}
 					}
 				}
 			}

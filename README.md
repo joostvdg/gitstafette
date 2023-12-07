@@ -4,9 +4,19 @@
 
 Git Webhook Relay demo app
 
+## Environment Variables
+
+### Open Telemetry
+
+* **OTEL_ENABLED**: Enable Open Telemetry, default is `false`
+* **OTEL_HOSTNAME**: Hostname of the Open Telemetry Collector, default is `localhost`
+* **OTEL_PROTOCOL**: Protocol of the Open Telemetry Collector, default is `grpc`
+* **OTEL_PORT**: Port of the Open Telemetry Collector, default is `4317`
+* **OTEL_SERVICE_NAME**: Service Name of the component, default is `Gitstafette`
+* **OTEL_TRACE_SAMPLING_RATE**: Sampling Rate of the Traces, default is `1`
+
 ## TODO
 
-* add Sentry to Docker Compose AWS 
 * set Kubernetes security
   * SecurityContext: https://snyk.io/blog/10-kubernetes-security-context-settings-you-should-understand/
   * Seccomp profiles: https://itnext.io/seccomp-in-kubernetes-part-i-7-things-you-should-know-before-you-even-start-97502ad6b6d6
@@ -19,17 +29,12 @@ Git Webhook Relay demo app
   * deploy via Crossplane
     * https://marketplace.upbound.io/providers/upbound/provider-gcp/v0.26.0/resources/cloudrun.gcp.upbound.io/Service/v1beta1
 * Add Sentry support for client
-* OpenTelemetry metrics
-* OpenTracing metrics
 * Expose State with GraphQL
   * with authentication
   * Gitstafette Explorer?
 * track relay status per client
 * alternative setup with CIVO cloud
   * https://www.civo.com/docs/kubernetes/load-balancers
-* Fly.io
-  * https://fly.io/docs/reference/configuration/#services-ports-tls_options
-  * https://fly.io/docs/app-guides/multiple-processes/#maybe-you-don-t-need-multiple-processes
 * CI/CD In Kubernetes
   * Scan with Snyk?
   * Testcontainers?

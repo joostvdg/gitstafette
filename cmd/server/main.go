@@ -49,8 +49,9 @@ const (
 )
 
 var (
-	mp     *sdkmetric.MeterProvider
-	tracer trace.Tracer
+	mp          *sdkmetric.MeterProvider
+	tracer      trace.Tracer
+	otelEnabled bool
 )
 
 type server struct {
@@ -96,7 +97,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if otelEnabled := os.Getenv("OTEL_ENABLED"); otelEnabled != "" {
+	otelEnabled = otel_util.IsOTelEnabled()
+	if otelEnabled {
 		log.Info().Msg("OTEL is enabled")
 		var otelShutdown func(context.Context) error
 		otelShutdown, err, metricProvider, tp := otel_util.SetupOTelSDK(ctx, "gsf-client", "0.0.1")
@@ -256,8 +258,6 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *
 	}
 
 	go func(s *grpc.Server) {
-		otel_util.SetupOTelSDK(ctx, "gsf-server", "0.0.1")
-
 		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to listen")
@@ -383,11 +383,15 @@ func (s server) WebhookEventPush(ignoredContext context.Context, request *api.We
 
 func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gitstafette_FetchWebhookEventsServer) error {
 	log.Printf("Relaying webhook events for repository %s", request.RepositoryId)
-	meter := mp.Meter("gitstafette")
-	counter, _ := meter.Int64Counter(
-		"webhook_events_relayed",
-		otelapi.WithDescription("Number of webhook events relayed"),
-	)
+	var counter otelapi.Int64Counter
+	otelEnabled := otel_util.IsOTelEnabled()
+	if otelEnabled {
+		meter := mp.Meter("gitstafette")
+		counter, _ = meter.Int64Counter(
+			"webhook_events_relayed",
+			otelapi.WithDescription("Number of webhook events relayed"),
+		)
+	}
 
 	durationSeconds := request.GetDurationSecs()
 	finish := time.Now().Add(time.Second * time.Duration(durationSeconds))
@@ -397,20 +401,30 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 	ctx, stop := signal.NotifyContext(srv.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	traceContext, spanContext, span := otel_util.StartServerSpanFromClientContext(srv.Context(), tracer, "FetchWebhookEvents", trace.SpanKindServer)
-	defer span.End()
+	sublogger := log.With().Logger()
+	var parentSpanContext context.Context
+	var span trace.Span
+	if otelEnabled {
+		traceContext, spanContext, tmpSpan := otel_util.StartServerSpanFromClientContext(srv.Context(), tracer, "FetchWebhookEvents", trace.SpanKindServer)
+		span = tmpSpan
+		defer span.End()
+		parentSpanContext = spanContext
 
-	sublogger := log.With().
-		Str("span_id", span.SpanContext().SpanID().String()).
-		Str("trace_id", span.SpanContext().TraceID().String()).
-		Str("incoming_trace_id", traceContext.TraceID().String()).
-		Logger()
+		sublogger = log.With().
+			Str("span_id", span.SpanContext().SpanID().String()).
+			Str("trace_id", span.SpanContext().TraceID().String()).
+			Str("incoming_trace_id", traceContext.TraceID().String()).
+			Logger()
+	}
 
 	for time.Now().Before(finish) {
 		closed := false
 		select {
 		case <-time.After(responseInterval):
-			_, span := tracer.Start(spanContext, "retrieveCachedEventsForRepository", trace.WithSpanKind(trace.SpanKindServer))
+			var childSpan trace.Span
+			if otelEnabled {
+				_, childSpan = tracer.Start(parentSpanContext, "retrieveCachedEventsForRepository", trace.WithSpanKind(trace.SpanKindServer))
+			}
 
 			sublogger.Info().Msgf("Fetching events for repo %v (with Span)", request.RepositoryId)
 
@@ -418,7 +432,7 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 
 			if err != nil {
 				sublogger.Info().Msgf("Could not get events for Repo: %v\n", err)
-				span.SetStatus(codes2.Error, "Could not get events for Repo")
+				otel_util.SetSpanStatus(childSpan, codes2.Error, "Could not get events for Repo")
 				return err
 			}
 			response := &api.WebhookEventsResponse{
@@ -427,15 +441,21 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 
 			if err := srv.Send(response); err != nil {
 				sublogger.Info().Msgf("Error sending stream: %v\n", err)
-				span.SetStatus(codes2.Error, "Error sending stream")
+				otel_util.SetSpanStatus(childSpan, codes2.Error, "Error sending stream")
 				return err
 			}
 			sublogger.Info().Msgf("Send %v events to client (%v) for repo %v", len(events), request.ClientId, request.RepositoryId)
 
-			counter.Add(srv.Context(), int64(len(events)))
+			if otelEnabled {
+				counter.Add(srv.Context(), int64(len(events)))
+			}
 			updateRelayStatus(events, request.RepositoryId)
-			span.AddEvent("SendEvents", trace.WithAttributes(attribute.Int("events", len(events))))
-			span.End()
+			otel_util.AddSpanEventWithOption(childSpan, "SendEvents", trace.WithAttributes(attribute.Int("events", len(events))))
+
+			if otelEnabled {
+				childSpan.End()
+			}
+
 		case <-srv.Context().Done(): // Activated when ctx.Done() closes
 			sublogger.Info().Msgf("Closing FetchWebhookEvents (client context %s closed)", request.ClientId)
 			closed = true
@@ -451,9 +471,10 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 		}
 	}
 	sublogger.Info().Msgf("Reached %v, so closed context %s", finish, request.ClientId)
-	span.AddEvent("Finished", trace.WithAttributes(attribute.String("reason", "timeout")))
-	span.SetStatus(codes2.Ok, "Finished")
-	span.End()
+	if otelEnabled {
+		span.AddEvent("Finished", trace.WithAttributes(attribute.String("reason", "timeout")))
+		span.SetStatus(codes2.Ok, "Finished")
+	}
 	return nil
 }
 

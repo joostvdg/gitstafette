@@ -3,6 +3,7 @@ package otel_util
 import (
 	"context"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	codes2 "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/metadata"
 	"os"
@@ -52,10 +53,7 @@ func NewOTELConfig() *OTELConfig {
 		port = osPort
 	}
 
-	// retrieve enabled from environment variable
-	if osEnabled := os.Getenv(OTEL_ENABLED); osEnabled != "" {
-		enabled = osEnabled == "true"
-	}
+	enabled = IsOTelEnabled()
 
 	return &OTELConfig{
 		serviceName:  serviceName,
@@ -112,4 +110,29 @@ func StartClientSpan(ctx context.Context, tracer trace.Tracer, serviceName strin
 	otelgrpc.Inject(spanContext, &md)
 	spanContext = metadata.NewOutgoingContext(spanContext, md)
 	return spanContext, span
+}
+
+func AddSpanEvent(span trace.Span, event string) {
+	if span != nil {
+		span.AddEvent(event)
+	}
+}
+
+func AddSpanEventWithOption(span trace.Span, event string, options trace.SpanStartEventOption) {
+	if span != nil {
+		span.AddEvent(event, options)
+	}
+}
+
+func IsOTelEnabled() bool {
+	if osEnabled := os.Getenv(OTEL_ENABLED); osEnabled != "" && osEnabled == "true" {
+		return true
+	}
+	return false
+}
+
+func SetSpanStatus(span trace.Span, code codes2.Code, statusMessage string) {
+	if span != nil {
+		span.SetStatus(code, statusMessage)
+	}
 }

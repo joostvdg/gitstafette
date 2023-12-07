@@ -397,7 +397,7 @@ func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gi
 	ctx, stop := signal.NotifyContext(srv.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	traceContext, spanContext, span := otel_util.StartSpanFromContext(srv.Context(), tracer, "FetchWebhookEvents", trace.SpanKindServer)
+	traceContext, spanContext, span := otel_util.StartServerSpanFromClientContext(srv.Context(), tracer, "FetchWebhookEvents", trace.SpanKindServer)
 	defer span.End()
 
 	sublogger := log.With().

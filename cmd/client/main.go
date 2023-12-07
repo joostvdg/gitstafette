@@ -184,9 +184,6 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 	}
 	defer conn.Close()
 
-	// TODO: cleanup the span config -> verify we don't need to retrieve the span context from the context (as we do for the serverside)
-	// TODO 2: verify if we need to add the span context to the metadata
-	// TODO 3: verify if this still shows up correctly in the service graph
 	spanContext, span := otel_util.StartClientSpan(mainCtx, tracer, "handleWebhookEventStream", conn.Target())
 	defer span.End()
 	sublogger := log.With().

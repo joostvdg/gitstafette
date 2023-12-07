@@ -77,7 +77,7 @@ func (o *OTELConfig) GetOTELEndpoint() string {
 	return o.hostName + ":" + o.port
 }
 
-func StartSpanFromContext(ctx context.Context, tracer trace.Tracer, serviceNames string, spanKind trace.SpanKind) (trace.SpanContext, context.Context, trace.Span) {
+func StartServerSpanFromClientContext(ctx context.Context, tracer trace.Tracer, serviceNames string, spanKind trace.SpanKind) (trace.SpanContext, context.Context, trace.Span) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		md = metadata.MD{}

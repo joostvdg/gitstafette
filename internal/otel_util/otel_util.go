@@ -2,19 +2,22 @@ package otel_util
 
 import (
 	"context"
+	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	codes2 "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/metadata"
 	"os"
+	"strconv"
 )
 
 const (
-	OTEL_HOSTNAME     = "OTEL_HOSTNAME"
-	OTEL_PROTOCOL     = "OTEL_PROTOCOL"
-	OTEL_PORT         = "OTEL_PORT"
-	OTEL_ENABLED      = "OTEL_ENABLED"
-	OTEL_SERVICE_NAME = "OTEL_SERVICE_NAME"
+	OTEL_HOSTNAME            = "OTEL_HOSTNAME"
+	OTEL_PROTOCOL            = "OTEL_PROTOCOL"
+	OTEL_PORT                = "OTEL_PORT"
+	OTEL_ENABLED             = "OTEL_ENABLED"
+	OTEL_SERVICE_NAME        = "OTEL_SERVICE_NAME"
+	OTEL_TRACE_SAMPLING_RATE = "OTEL_TRACE_SAMPLING_RATE"
 )
 
 type OTELConfig struct {
@@ -24,6 +27,7 @@ type OTELConfig struct {
 	port         string
 	grpcExporter bool
 	enabled      bool
+	samplingRate float64
 }
 
 func NewOTELConfig() *OTELConfig {
@@ -55,6 +59,17 @@ func NewOTELConfig() *OTELConfig {
 
 	enabled = IsOTelEnabled()
 
+	samplingRate := 1.0
+	if osSamplingRate := os.Getenv(OTEL_TRACE_SAMPLING_RATE); osSamplingRate != "" {
+		rate, err := strconv.ParseFloat(osSamplingRate, 64)
+		if err != nil {
+			log.Warn().Err(err).Msg("Could not parse OTEL_TRACE_SAMPLING_RATE")
+
+		} else {
+			samplingRate = rate
+		}
+	}
+
 	return &OTELConfig{
 		serviceName:  serviceName,
 		hostName:     hostName,
@@ -62,6 +77,7 @@ func NewOTELConfig() *OTELConfig {
 		port:         port,
 		grpcExporter: grcpExporter,
 		enabled:      enabled,
+		samplingRate: samplingRate,
 	}
 }
 

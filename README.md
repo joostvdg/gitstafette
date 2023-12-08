@@ -389,13 +389,13 @@ export OTEL_SERVICE_NAME=GSF-Client-1; export OTEL_PORT=12345; go \
 ## Otel Collector
 
 ```shell
-export OTEL_SERVICE_NAME=GSF-Server-1; export OTEL_PORT=4317; export OTEL_ENABLED=true; go \
+export OTEL_SERVICE_NAME=GSF-Server-1; export OTEL_PORT=4317; export OTEL_ENABLED=true; export OTEL_TRACE_SAMPLING_RATE="0.2"; go \
   run cmd/server/main.go --repositories 537845873 \
   --port 1323 --grpcPort 50051 --grpcHealthPort 50051
 ```
 
 ```shell
-export OTEL_SERVICE_NAME=GSF-Client-1; export OTEL_PORT=4317; export OTEL_ENABLED=true; go \
+export OTEL_SERVICE_NAME=GSF-Client-1; export OTEL_PORT=4317; export OTEL_ENABLED=true; export OTEL_TRACE_SAMPLING_RATE="0.2"; go \
   run cmd/client/main.go --repo 537845873 --server "localhost" \
   --port 50051 --insecure=true \
   --streamWindow 15

@@ -65,7 +65,7 @@ func SetupOTelSDK(ctx context.Context, serviceName, serviceVersion string) (shut
 	otel.SetTextMapPropagator(prop)
 
 	// Set up trace provider.
-	tracerProvider, err = newTraceProvider(res)
+	tracerProvider, err = newTraceProvider(res, otelConfig)
 	if err != nil {
 		handleErr(err)
 		return
@@ -100,7 +100,7 @@ func newPropagator() propagation.TextMapPropagator {
 	)
 }
 
-func newTraceProvider(res *resource.Resource) (*trace.TracerProvider, error) {
+func newTraceProvider(res *resource.Resource, config *OTELConfig) (*sdktrace.TracerProvider, error) {
 	otelConfig := NewOTELConfig()
 
 	// Set up a trace exporter
@@ -134,7 +134,9 @@ func newTraceProvider(res *resource.Resource) (*trace.TracerProvider, error) {
 	// span processor to aggregate spans before export.
 	bsp := sdktrace.NewBatchSpanProcessor(traceExporter)
 
-	sampler := sdktrace.ParentBased(sdktrace.TraceIDRatioBased(0.9))
+	sublogger := log.With().Str("component", "otel_util").Logger()
+	sublogger.Info().Msgf("OTEL Config: %v", otelConfig)
+	sampler := sdktrace.ParentBased(sdktrace.TraceIDRatioBased(otelConfig.samplingRate))
 	tracerProvider := sdktrace.NewTracerProvider(
 		sdktrace.WithSampler(sampler),
 		sdktrace.WithResource(res),

@@ -6,6 +6,13 @@ import (
 	"net/url"
 )
 
+type ServerConfig struct {
+	Name         string
+	Host         string
+	Port         string
+	GrpcPort     string
+	Repositories []string
+}
 type RelayConfig struct {
 	Enabled        bool
 	Host           string

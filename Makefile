@@ -28,6 +28,10 @@ proto:
 	--go_out=. \
 	--go_opt=paths=source_relative \
 	--proto_path=.
+	protoc api/info/*.proto \
+	--go_out=. \
+	--go_opt=paths=source_relative \
+	--proto_path=.
 
 .PHONY: compile
 compile:
@@ -38,6 +42,12 @@ compile:
 	--go-grpc_opt=paths=source_relative \
 	--proto_path=.
 	protoc api/health/v1/*.proto \
+	--go_out=. \
+	--go-grpc_out=. \
+	--go_opt=paths=source_relative \
+	--go-grpc_opt=paths=source_relative \
+	--proto_path=.
+	protoc api/info/*.proto \
 	--go_out=. \
 	--go-grpc_out=. \
 	--go_opt=paths=source_relative \
@@ -107,7 +117,7 @@ ghz-local-2:
 server-1:
 	export OTEL_SERVICE_NAME=GSF-Server-1; export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317; go \
 		run cmd/server/main.go --repositories 537845873 \
-		--port 1323 --grpcPort 50051 --grpcHealthPort 50051 \
+		--port 1323 --grpcPort 50051 --grpcHealthPort 50051
 
 	#    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317;\
 	#    export OTEL_SERVICE_NAME=Server-1;\
@@ -197,7 +207,7 @@ client-2-tls:
 
 .PHONY: client-2
 client-2:
-	go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50051 --healthCheckPort=8081 --relayEndpoint http://localhost:1324/v1/github/
+	go run cmd/client/main.go --repo 537845873 --server "127.0.0.1" --port 50052 --insecure=true
 
 .PHONY: client-3
 client-3:

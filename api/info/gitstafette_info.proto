@@ -1,0 +1,38 @@
+syntax = "proto3";
+package info;
+option go_package = "github.com/joostvdg/gitstafette/api/info";
+
+service Info {
+    rpc GetInfo(GetInfoRequest) returns (GetInfoResponse) {}
+}
+
+message GetInfoRequest {
+  string client_id = 1;
+  string client_endpoint = 2;
+}
+
+message GetInfoResponse {
+  bool alive = 1;
+  InstanceType instance_type = 2;
+  string version = 3;
+  string name = 4;
+  ServerInfo server = 5;
+  optional ServerInfo relay = 6;
+}
+
+message ServerInfo {
+  string hostname = 1;
+  string ip = 2;
+  string port = 3;
+  string protocol = 4;
+  optional string repositories = 5;
+}
+
+enum InstanceType {
+  RELAY = 0;
+  SERVER = 1;
+  CLIENT = 2;
+  HUB = 3;
+  DISCOVERY = 4;
+  EXPLORER = 5;
+}

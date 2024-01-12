@@ -13,13 +13,12 @@ import (
 	"github.com/joostvdg/gitstafette/internal/config"
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
 	grpc_internal "github.com/joostvdg/gitstafette/internal/grpc"
+	"github.com/joostvdg/gitstafette/internal/info"
 	"github.com/joostvdg/gitstafette/internal/otel_util"
 	"github.com/joostvdg/gitstafette/internal/relay"
+	"github.com/joostvdg/gitstafette/internal/server"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog"
-	"go.opentelemetry.io/otel/attribute"
-	codes2 "go.opentelemetry.io/otel/codes"
-	otelapi "go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	//semconv "go.opentelemetry.io/otel_util/semconv/v1.18.0"
 	"go.opentelemetry.io/otel/trace"
@@ -36,6 +35,7 @@ import (
 	"syscall"
 	"time"
 
+	infoapi "github.com/joostvdg/gitstafette/api/info"
 	api "github.com/joostvdg/gitstafette/api/v1"
 	"github.com/labstack/echo/v4"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -54,26 +54,23 @@ var (
 	otelEnabled bool
 )
 
-type server struct {
-	api.UnimplementedGitstafetteServer
-}
-
 func main() {
-	port := flag.String("port", "1323", "Port used for hosting the server")
-	grpcPort := flag.String("grpcPort", "50051", "Port used for hosting the grpc streaming server")
+	name := flag.String("name", "GSF-Server", "Name of the GitstafetteServer")
+	port := flag.String("port", "1323", "Port used for hosting the GitstafetteServer")
+	grpcPort := flag.String("grpcPort", "50051", "Port used for hosting the grpc streaming GitstafetteServer")
 	grpcHealthPort := flag.String("grpcHealthPort", "50052", "Port used for hosting the grpc health checks")
 	repositoryIDs := flag.String("repositories", "", "Comma separated list of GitHub repository IDs to listen for")
 	redisDatabase := flag.String("redisDatabase", "0", "Database used for redis")
-	redisHost := flag.String("redisHost", "localhost", "Host of the Redis server")
-	redisPort := flag.String("redisPort", "6379", "Port of the Redis server")
-	redisPassword := flag.String("redisPassword", "", "Password of the Redis server (default is no password")
-	relayEnabled := flag.Bool("relayEnabled", false, "If the server should relay received events, rather than caching them for clients")
+	redisHost := flag.String("redisHost", "localhost", "Host of the Redis GitstafetteServer")
+	redisPort := flag.String("redisPort", "6379", "Port of the Redis GitstafetteServer")
+	redisPassword := flag.String("redisPassword", "", "Password of the Redis GitstafetteServer (default is no password")
+	relayEnabled := flag.Bool("relayEnabled", false, "If the GitstafetteServer should relay received events, rather than caching them for clients")
 	relayHost := flag.String("relayHost", "127.0.0.1", "Host address to relay events to")
 	relayPath := flag.String("relayPath", "/", "Path on the host address to relay events to")
 	relayHealthCheckPath := flag.String("relayHealthCheckPath", "/", "Path on the host address to do health check on, for relay target")
 	relayPort := flag.String("relayPort", "50051", "The port of the relay address")
 	relayProtocol := flag.String("relayProtocol", "grpc", "The protocol for the relay address (grpc, or http)")
-	relayInsecure := flag.Bool("relayInsecure", false, "If the relay server should be handled insecurely")
+	relayInsecure := flag.Bool("relayInsecure", false, "If the relay GitstafetteServer should be handled insecurely")
 	caFileLocation := flag.String("caFileLocation", "", "The root CA file for trusting clients using TLS connection")
 	certFileLocation := flag.String("certFileLocation", "", "The certificate file for trusting clients using TLS connection")
 	certKeyFileLocation := flag.String("certKeyFileLocation", "", "The certificate key file for trusting clients using TLS connection")
@@ -103,7 +100,7 @@ func main() {
 		var otelShutdown func(context.Context) error
 		otelShutdown, err, metricProvider, tp := otel_util.SetupOTelSDK(ctx, "gsf-client", "0.0.1")
 		mp = metricProvider
-		tracer = tp.Tracer("gsf-server")
+		tracer = tp.Tracer("gsf-GitstafetteServer")
 		if err != nil {
 			log.Fatal().Err(err).Msg("Could not configure OTEL URL")
 		}
@@ -119,15 +116,23 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Malformed URL")
 	}
+	serverConfig := &api.ServerConfig{
+		Name:         *name,
+		Host:         "localhost",
+		Port:         *port,
+		GrpcPort:     *grpcPort,
+		Repositories: repoIds,
+	}
 
 	initSentry() // has to happen before we init Echo
 	var grpcHealthServer *grpc.Server
 	if *grpcHealthPort != *grpcPort {
 		grpcHealthServer = initializeGRPCHealthServer(*grpcHealthPort)
 	}
-	grpcServer := initializeGRPCServer(*grpcPort, tlsConfig, grpcHealthServer, ctx)
+
+	grpcServer := initializeGRPCServer(*grpcPort, tlsConfig, grpcHealthServer, ctx, serverConfig, relayConfig)
 	echoServer := initializeEchoServer(relayConfig, *port, *webhookHMAC)
-	log.Printf("Started http server on: %s, grpc server on: %s, and grpc health server on: %s\n", *port, *grpcPort, *grpcHealthPort)
+	log.Printf("Started http GitstafetteServer on: %s, grpc GitstafetteServer on: %s, and grpc health GitstafetteServer on: %s\n", *port, *grpcPort, *grpcHealthPort)
 
 	serviceContext := &gcontext.ServiceContext{
 		Context: ctx,
@@ -150,13 +155,13 @@ func main() {
 	<-quit
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	log.Info().Msg("Shutting down Echo server")
+	log.Info().Msg("Shutting down Echo GitstafetteServer")
 	if err := echoServer.Shutdown(ctx); err != nil {
 		echoServer.Logger.Fatal(err)
 	}
-	log.Info().Msg("Shutting down GRPC gitstafette server")
+	log.Info().Msg("Shutting down GRPC gitstafette GitstafetteServer")
 	grpcServer.GracefulStop()
-	log.Info().Msg("Shutting down GRPC health server")
+	log.Info().Msg("Shutting down GRPC health GitstafetteServer")
 	if *grpcHealthPort != *grpcPort {
 		grpcHealthServer.GracefulStop()
 	}
@@ -204,10 +209,10 @@ func initializeEchoServer(relayConfig *api.RelayConfig, port string, webhookHMAC
 	e.GET("/v1/watchlist", internal_api.HandleWatchListGet)
 	e.GET("/v1/events/:repo", internal_api.HandleRetrieveEventsForRepository)
 
-	// Start Echo server
+	// Start Echo GitstafetteServer
 	go func(echoPort string) {
 		if err := e.Start(":" + echoPort); err != nil && err != http.ErrServerClosed {
-			e.Logger.Fatal("shutting down the Echo server")
+			e.Logger.Fatal("shutting down the Echo GitstafetteServer")
 		}
 	}(port)
 	return e
@@ -235,16 +240,16 @@ func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
 			log.Fatal().Err(err).Msg("failed to listen")
 		}
 
-		grpc_health_v1.RegisterHealthServer(s, &HealthCheckService{})
+		grpc_health_v1.RegisterHealthServer(s, &grpc_internal.HealthCheckService{})
 		if err := s.Serve(grpcListener); err != nil {
 			log.Fatal().Err(err).Msg("failed to serve")
 		}
-		log.Info().Msg("Shutdown GRPC health server")
+		log.Info().Msg("Shutdown GRPC health GitstafetteServer")
 	}(grpcServer)
 	return grpcServer
 }
 
-func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *grpc.Server, ctx context.Context) *grpc.Server {
+func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *grpc.Server, ctx context.Context, serverConfig *api.ServerConfig, relayConfig *api.RelayConfig) *grpc.Server {
 	grpcServer := grpc.NewServer(
 		grpc.ChainStreamInterceptor(grpc_internal.ValidateToken),
 	)
@@ -263,264 +268,29 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *
 			log.Fatal().Err(err).Msg("failed to listen")
 		}
 
-		log.Printf("Starting GRPC server")
-		api.RegisterGitstafetteServer(s, &server{})
+		log.Printf("Starting GRPC GitstafetteServer")
+		api.RegisterGitstafetteServer(s, &server.GitstafetteServer{
+			Tracer:           tracer,
+			MeterProvider:    mp,
+			ResponseInterval: responseInterval,
+		})
+		infoapi.RegisterInfoServer(s, &info.InfoServer{
+			RelayConfig:  relayConfig,
+			ServerConfig: serverConfig,
+			Tracer:       tracer,
+			Type:         infoapi.InstanceType_SERVER,
+		})
 		if healthServer == nil {
-			log.Info().Msg("GRPC HealthCheck server is empty, running service with normal GRPC server")
-			grpc_health_v1.RegisterHealthServer(s, &HealthCheckService{})
+			log.Info().Msg("GRPC HealthCheck GitstafetteServer is empty, running service with normal GRPC GitstafetteServer")
+			grpc_health_v1.RegisterHealthServer(s, &grpc_internal.HealthCheckService{})
 		} else {
-			log.Printf("Running GRPC HealthCheck server standalone\n", s.GetServiceInfo())
+			log.Printf("Running GRPC HealthCheck GitstafetteServer standalone\n", s.GetServiceInfo())
 		}
 
 		if err := s.Serve(grpcListener); err != nil {
 			log.Fatal().Err(err).Msg("failed to serve")
 		}
-		log.Info().Msg("Shutdown GRPC gitstafette server")
+		log.Info().Msg("Shutdown GRPC gitstafette GitstafetteServer")
 	}(grpcServer)
 	return grpcServer
-}
-
-func (s server) WebhookEventStatus(ctx context.Context, req *api.WebhookEventStatusRequest) (*api.WebhookEventStatusResponse, error) {
-	response := &api.WebhookEventStatusResponse{
-		ServerId:     "Gitstafette",
-		Count:        0,
-		RepositoryId: req.RepositoryId,
-		Status:       "OK",
-	}
-	return response, nil
-}
-func (s server) WebhookEventStatuses(request *api.WebhookEventStatusesRequest, srv api.Gitstafette_WebhookEventStatusesServer) error {
-
-	status01 := &api.WebhookEventStatusResponse{
-		ServerId:     "Gitstafette",
-		Count:        1,
-		RepositoryId: "12345",
-		Status:       "OK",
-	}
-
-	status02 := &api.WebhookEventStatusResponse{
-		ServerId:     "Gitstafette",
-		Count:        2,
-		RepositoryId: "7891",
-		Status:       "OK",
-	}
-
-	status03 := &api.WebhookEventStatusResponse{
-		ServerId:     "Gitstafette",
-		Count:        3,
-		RepositoryId: "7892",
-		Status:       "FAILED",
-	}
-
-	finish := time.Now().Add(time.Second * 30)
-	ctx, stop := signal.NotifyContext(srv.Context(), os.Interrupt, syscall.SIGTERM)
-
-	defer stop()
-
-	waitInterval := time.Second * 5
-
-	log.Printf("Wait Interval is: %v", waitInterval)
-
-	spanCtx, span := tracer.Start(ctx, "WebhookEventStatuses", trace.WithSpanKind(trace.SpanKindServer))
-	span.AddEvent("Start")
-	events := []*api.WebhookEventStatusResponse{status01, status02, status03}
-	lastEvent := len(events) - 1
-	currentEvent := 0
-
-	for time.Now().Before(finish) {
-		closed := false
-		select {
-		case <-time.After(waitInterval):
-			eventInfo := fmt.Sprintf("Sent event %v of %v", currentEvent, lastEvent)
-			_, span := tracer.Start(spanCtx, eventInfo, trace.WithSpanKind(trace.SpanKindServer))
-			if currentEvent > lastEvent {
-				closed = true
-				break
-			}
-			eventStatus := events[currentEvent]
-			currentEvent++
-
-			span.AddEvent("Send", trace.WithAttributes(attribute.Int("eventCounter", currentEvent)))
-			if err := srv.Send(eventStatus); err != nil {
-				return err
-			}
-			span.End()
-			break
-		case <-srv.Context().Done(): // Activated when ctx.Done() closes
-			log.Printf("Closing WebhookEventStatuses (client context %s closed)", request.ClientId)
-			closed = true
-			break
-		case <-ctx.Done(): // Activated when ctx.Done() closes
-			log.Info().Msg("Closing WebhookEventStatuses (main context closed)")
-			closed = true
-			break
-		}
-		if closed {
-			log.Info().Msg("Context is already closed")
-			break
-		}
-	}
-	log.Printf("Reached %v, so closed context %s", finish, request.ClientId)
-	span.AddEvent("Finished", trace.WithAttributes(attribute.String("reason", "timeout")))
-	span.End()
-	return nil
-}
-
-func (s server) WebhookEventPush(ignoredContext context.Context, request *api.WebhookEventPushRequest) (*api.WebhookEventPushResponse, error) {
-	response := &api.WebhookEventPushResponse{
-		ResponseCode:        "200", // TODO implement a response code system
-		ResponseDescription: "depends",
-		Accepted:            false,
-	}
-
-	err := cache.Event(request.RepositoryId, request.WebhookEvent)
-	if err == nil {
-		response.Accepted = true
-		log.Printf("Accepted Webhook Event Push for Repo %v: %v", request.RepositoryId, request.WebhookEvent.EventId)
-	}
-	return response, err
-}
-
-func (s server) FetchWebhookEvents(request *api.WebhookEventsRequest, srv api.Gitstafette_FetchWebhookEventsServer) error {
-	log.Printf("Relaying webhook events for repository %s", request.RepositoryId)
-	var counter otelapi.Int64Counter
-	otelEnabled := otel_util.IsOTelEnabled()
-	if otelEnabled {
-		meter := mp.Meter("gitstafette")
-		counter, _ = meter.Int64Counter(
-			"webhook_events_relayed",
-			otelapi.WithDescription("Number of webhook events relayed"),
-		)
-	}
-
-	durationSeconds := request.GetDurationSecs()
-	finish := time.Now().Add(time.Second * time.Duration(durationSeconds))
-	log.Printf("Stream is alive from %v to %v", time.Now(), finish)
-	log.Printf("Response Interval is: %v", responseInterval)
-
-	ctx, stop := signal.NotifyContext(srv.Context(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	sublogger := log.With().Logger()
-	var parentSpanContext context.Context
-	var span trace.Span
-	if otelEnabled {
-		traceContext, spanContext, tmpSpan := otel_util.StartServerSpanFromClientContext(srv.Context(), tracer, "FetchWebhookEvents", trace.SpanKindServer)
-		span = tmpSpan
-		defer span.End()
-		parentSpanContext = spanContext
-
-		sublogger = log.With().
-			Str("span_id", span.SpanContext().SpanID().String()).
-			Str("trace_id", span.SpanContext().TraceID().String()).
-			Str("incoming_trace_id", traceContext.TraceID().String()).
-			Logger()
-	}
-
-	for time.Now().Before(finish) {
-		closed := false
-		select {
-		case <-time.After(responseInterval):
-			var childSpan trace.Span
-			if otelEnabled {
-				_, childSpan = tracer.Start(parentSpanContext, "retrieveCachedEventsForRepository", trace.WithSpanKind(trace.SpanKindServer))
-			}
-
-			sublogger.Info().Msgf("Fetching events for repo %v (with Span)", request.RepositoryId)
-
-			events, err := retrieveCachedEventsForRepository(request.RepositoryId)
-
-			if err != nil {
-				sublogger.Info().Msgf("Could not get events for Repo: %v\n", err)
-				otel_util.SetSpanStatus(childSpan, codes2.Error, "Could not get events for Repo")
-				return err
-			}
-			response := &api.WebhookEventsResponse{
-				WebhookEvents: events,
-			}
-
-			if err := srv.Send(response); err != nil {
-				sublogger.Info().Msgf("Error sending stream: %v\n", err)
-				otel_util.SetSpanStatus(childSpan, codes2.Error, "Error sending stream")
-				return err
-			}
-			sublogger.Info().Msgf("Send %v events to client (%v) for repo %v", len(events), request.ClientId, request.RepositoryId)
-
-			if otelEnabled {
-				counter.Add(srv.Context(), int64(len(events)))
-			}
-			updateRelayStatus(events, request.RepositoryId)
-			otel_util.AddSpanEventWithOption(childSpan, "SendEvents", trace.WithAttributes(attribute.Int("events", len(events))))
-
-			if otelEnabled {
-				childSpan.End()
-			}
-
-		case <-srv.Context().Done(): // Activated when ctx.Done() closes
-			sublogger.Info().Msgf("Closing FetchWebhookEvents (client context %s closed)", request.ClientId)
-			closed = true
-			break
-		case <-ctx.Done(): // Activated when ctx.Done() closes
-			sublogger.Info().Msg("Closing FetchWebhookEvents (main context closed)")
-			closed = true
-			break
-		}
-		if closed {
-			sublogger.Info().Msg("Context is already closed")
-			break
-		}
-	}
-	sublogger.Info().Msgf("Reached %v, so closed context %s", finish, request.ClientId)
-	if otelEnabled {
-		span.AddEvent("Finished", trace.WithAttributes(attribute.String("reason", "timeout")))
-		span.SetStatus(codes2.Ok, "Finished")
-	}
-	return nil
-}
-
-func updateRelayStatus(events []*api.WebhookEvent, repositoryId string) {
-	cachedEvents := cache.Store.RetrieveEventsForRepository(repositoryId)
-	for _, event := range events {
-		eventId := event.EventId
-		for _, cachedEvent := range cachedEvents {
-			if cachedEvent.ID == eventId {
-				cachedEvent.IsRelayed = true
-				cachedEvent.TimeRelayed = time.Now()
-			}
-		}
-	}
-}
-
-func retrieveCachedEventsForRepository(repositoryId string) ([]*api.WebhookEvent, error) {
-	events := make([]*api.WebhookEvent, 0)
-	if !cache.Repositories.RepositoryIsWatched(repositoryId) {
-		return events, fmt.Errorf("cannot fetch events for empty repository id")
-	}
-	cachedEvents := cache.Store.RetrieveEventsForRepository(repositoryId)
-	for _, cachedEvent := range cachedEvents {
-		if cachedEvent.IsRelayed {
-			log.Printf("Event is already relayed: %v", cachedEvent)
-			continue
-		}
-		event := api.InternalToExternalEvent(cachedEvent)
-		events = append(events, event)
-	}
-	return events, nil
-}
-
-// HealthCheckService implements grpc_health_v1.HealthServer
-type HealthCheckService struct{}
-
-// TODO add actual health checks
-func (s *HealthCheckService) Check(ctx context.Context, req *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
-	return &grpc_health_v1.HealthCheckResponse{
-		Status: grpc_health_v1.HealthCheckResponse_SERVING,
-	}, nil
-}
-
-// TODO add actual health checks
-func (s *HealthCheckService) Watch(req *grpc_health_v1.HealthCheckRequest, server grpc_health_v1.Health_WatchServer) error {
-	return server.Send(&grpc_health_v1.HealthCheckResponse{
-		Status: grpc_health_v1.HealthCheckResponse_SERVING,
-	})
 }

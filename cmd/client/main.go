@@ -6,11 +6,15 @@ import (
 	"crypto/x509"
 	"errors"
 	"flag"
+	"fmt"
+	infoapi "github.com/joostvdg/gitstafette/api/info"
 	api "github.com/joostvdg/gitstafette/api/v1"
 	v1 "github.com/joostvdg/gitstafette/internal/api/v1"
 	"github.com/joostvdg/gitstafette/internal/cache"
 	"github.com/joostvdg/gitstafette/internal/config"
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
+	grpc_internal "github.com/joostvdg/gitstafette/internal/grpc"
+	"github.com/joostvdg/gitstafette/internal/info"
 	"github.com/joostvdg/gitstafette/internal/otel_util"
 	"github.com/joostvdg/gitstafette/internal/relay"
 	"github.com/rs/zerolog"
@@ -25,6 +29,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/credentials/oauth"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"io"
 	"net"
 	"net/http"
@@ -57,11 +62,13 @@ type ServerState struct {
 func main() {
 	// TODO retrieve only events for specific repository
 	// TODO so we need a repositories flag, like with the config
+	name := flag.String("name", "GSF-Relay", "Name of the GitstafetteServer")
 	grpcServerPort := flag.String("port", "50051", "Port used for connecting to the GRPC Server")
 	grpcServerHost := flag.String("server", "127.0.0.1", "Server host to connect to")
 	grpcServerInsecure := flag.Bool("insecure", false, "If the grpc streaming config should be handled insecurely, must provide either `secure` or `insecure` flag")
 	grpcServerSecure := flag.Bool("secure", false, "If the grpc streaming config should be handled securely, must provide either `secure` or `insecure` flag")
 	repositoryId := flag.String("repo", "", "GitHub Repository ID to receive webhook events for")
+	grpcInfoPort := flag.String("infoPort", "50052", "Port used for connecting to the GRPC Info Server")
 	relayEnabled := flag.Bool("relayEnabled", false, "If the config should relay received events, rather than caching them for clients")
 	relayHost := flag.String("relayHost", "127.0.0.1", "Host address to relay events to")
 	relayPath := flag.String("relayPath", "/", "Path on the host address to relay events to")
@@ -101,6 +108,16 @@ func main() {
 	if err != nil {
 		sublogger.Fatal().Err(err).Msg("Malformed Relay URL")
 	}
+
+	repoIds := []string{*repositoryId}
+	serverConfig := &api.ServerConfig{
+		Name:         *name,
+		Host:         "localhost",
+		Port:         *healthCheckPort,
+		GrpcPort:     *grpcInfoPort,
+		Repositories: repoIds,
+	}
+	runInfoServer(ctx, serverConfig, relayConfig, *grpcInfoPort)
 
 	serviceContext := &gcontext.ServiceContext{
 		Context: ctx,
@@ -147,6 +164,30 @@ func main() {
 		time.Sleep(sleepTime)
 	}
 	sublogger.Info().Msg("Closing client")
+}
+
+func runInfoServer(ctx context.Context, serverConfig *api.ServerConfig, relayConfig *api.RelayConfig, grpcPort string) {
+	grpcServer := grpc.NewServer()
+	go func(s *grpc.Server) {
+		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to listen")
+		}
+
+		infoapi.RegisterInfoServer(s, &info.InfoServer{
+			RelayConfig:  relayConfig,
+			ServerConfig: serverConfig,
+			Tracer:       tracer,
+			Type:         infoapi.InstanceType_RELAY,
+		})
+		grpc_health_v1.RegisterHealthServer(s, &grpc_internal.HealthCheckService{})
+
+		if err := s.Serve(grpcListener); err != nil {
+			log.Fatal().Err(err).Msg("failed to serve")
+		}
+		log.Info().Msg("Shutdown GRPC gitstafette GitstafetteServer")
+	}(grpcServer)
+
 }
 
 func initHealthCheckServer(ctx context.Context, port string) {

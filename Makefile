@@ -74,9 +74,14 @@ probe-1-tls:
 		-tls-client-cert /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
 		-tls-client-key /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem
 
-.PHONY: probe-1-aws
-probe-1-aws:
-	grpc-health-probe -addr=events.gitstafette.joostvdg.net:50051 -tls
+.PHONY: probe-aws
+probe-aws:
+	grpc-health-probe -addr=events.gitstafette.joostvdg.net:50051 \
+		-tls -tls-ca-cert=/home/joostvdg/projects/homelab/certs/ca.pem \
+		-tls-client-cert /home/joostvdg/projects/homelab/certs/gitstafette/client-local.pem \
+		-tls-client-key /home/joostvdg/projects/homelab/certs/gitstafette/client-local-key.pem \
+		-tls-server-name=events.gitstafette.joostvdg.net \
+		-v
 
 .PHONY: gcurl-aws
 gcurl-aws:
@@ -179,19 +184,35 @@ client-1-tls:
 		--healthCheckPort=8081 \
 		--clientId="local-1" \
 		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
-		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
-		--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem
+		--certFileLocation /home/joostvdg/projects/homelab/certs/gitstafette/client-local.pem \
+		--certKeyFileLocation /home/joostvdg/projects/homelab/certs/gitstafette/client-local-key.pem
 
-client-aws:
-	OAUTH_TOKEN="Q4HEg0ODGuie0wraqUn4" go run cmd/client/main.go --repo 537845873 --server "events.gitstafette.joostvdg.net" --port 50051 \
+client-aws:  # need to set OAUTH_TOKEN
+	go run cmd/client/main.go --repo 537845873 --server "events.gitstafette.joostvdg.net" --port 50051 \
 		--secure \
 		--streamWindow 3600 \
 		--healthCheckPort=8081 \
 		--clientId="local-1" \
-		--caFileLocation /mnt/d/Projects/homelab-rpi/certs/ca.pem \
-		--certFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local.pem \
-		--certKeyFileLocation /mnt/d/Projects/homelab-rpi/certs/gitstafette/client-local-key.pem
+		--caFileLocation /home/joostvdg/projects/homelab/certs/ca.pem \
+		--certFileLocation /home/joostvdg/projects/homelab/certs/gitstafette/client-local.pem \
+		--certKeyFileLocation /home/joostvdg/projects/homelab/certs/gitstafette/client-local-key.pem
 
+client-aws-2: # need to set OAUTH_TOKEN
+	export OTEL_SERVICE_NAME=GSF-AWS_CLIENT-1; OTEL_ENABLED=true; go run cmd/client/main.go --repo 537845873 --server "events.gitstafette.joostvdg.net" --port 50051 \
+		--streamWindow 3600 \
+		--healthCheckPort=8081 \
+		--clientId="local-1" \
+		--caFileLocation /home/joostvdg/projects/homelab/certs/ca.pem \
+		--certFileLocation /home/joostvdg/projects/homelab/certs/gitstafette/client-local.pem \
+		--certKeyFileLocation /home/joostvdg/projects/homelab/certs/gitstafette/client-local-key.pem \
+		 --relayEnabled=true \
+		 --relayHost el-gitstafette-image-builds.gsf.svc.cluster.local \
+		 --relayPath / \
+		 --relayHealthCheckPath / \
+		 --relayPort "8080" \
+		 --relayProtocol http \
+		 --relayInsecure "true" \
+		  --secure
 
 .PHONY: client-2-tls
 client-2-tls:

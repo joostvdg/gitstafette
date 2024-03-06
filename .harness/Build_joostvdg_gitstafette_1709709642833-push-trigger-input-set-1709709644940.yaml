@@ -1,0 +1,14 @@
+inputSet:
+  name: Build_joostvdg_gitstafette_1709709642833-push-trigger-input-set
+  identifier: Build_joostvdg_gitstafette_1709709642833pushtriggerinputset
+  orgIdentifier: default
+  projectIdentifier: gitstafette
+  pipeline:
+    identifier: Build_joostvdg_gitstafette_1709709642833
+    properties:
+      ci:
+        codebase:
+          build:
+            type: branch
+            spec:
+              branch: <+trigger.branch>

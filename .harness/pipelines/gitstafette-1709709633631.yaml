@@ -21,7 +21,8 @@ pipeline:
                   identifier: gobuild
                   name: go_build
                   spec:
-                    command: go build
+                    shell: Sh
+                    command: make go-build-server
                   timeout: ""
                   type: Run
               - step:
@@ -52,9 +53,9 @@ pipeline:
                   timeout: ""
                   type: Plugin
           platform:
-            arch: Amd64
             os: Linux
+            arch: Amd64
           runtime:
-            spec: {}
             type: Cloud
+            spec: {}
         type: CI

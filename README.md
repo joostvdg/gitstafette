@@ -17,6 +17,7 @@ Git Webhook Relay demo app
 
 ## TODO
 
+* Should we ignore `X-GitHub-Event: create`?
 * set Kubernetes security
   * SecurityContext: https://snyk.io/blog/10-kubernetes-security-context-settings-you-should-understand/
   * Seccomp profiles: https://itnext.io/seccomp-in-kubernetes-part-i-7-things-you-should-know-before-you-even-start-97502ad6b6d6

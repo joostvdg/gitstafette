@@ -1,0 +1,49 @@
+services:
+  secret-test:
+    image: bitnami/minideb:bullseye
+    restart: unless-stopped
+    command: ["./etc/log_secrets.sh"]
+    configs:
+      - source: log_secrets
+        target: /etc/log_secrets.sh
+    secrets:
+      - source: certificate
+        target: server.cert
+        uid: "103"
+        gid: "103"
+        mode: 0440
+      - source: certificate-key
+        target: server.key
+        uid: "103"
+        gid: "103"
+        mode: 0440
+      - source: ca
+        target: ca.cert
+        uid: "103"
+        gid: "103"
+        mode: 0440
+    env_file:
+      - path: ./default.env
+        required: true # default
+      - path: ./override.env
+        required: false
+
+secrets:
+  certificate:
+    file: ./certs/events-aws.pem
+  certificate-key:
+    file: ./certs/events-aws-key.pem
+  ca:
+    file: ./certs/ca.pem
+
+volumes:
+  test-certificates:
+
+configs:
+  log_secrets:
+    file: ./scripts/log_secrets.sh
+
+networks:
+  gitstafette:
+    driver: bridge
+    enable_ipv6: false

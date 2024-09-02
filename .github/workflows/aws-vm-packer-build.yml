@@ -1,0 +1,25 @@
+on: workflow_dispatch
+
+jobs:
+  packer-build:
+    runs-on: ubuntu-latest
+    name: Run Packer
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup `packer`
+        uses: hashicorp/setup-packer@main
+        id: setup
+        with:
+          version: "latest"
+
+      - name: Run `packer init`
+        id: init
+        working-directory: ./aws/test-ec2-secrets/packer
+        run: "packer init ./aws-ubuntu.pkr.hcl"
+
+      - name: Run `packer validate`
+        id: validate
+        working-directory: ./aws/test-ec2-secrets/packer
+        run: "packer validate ./aws-ubuntu.pkr.hcl"

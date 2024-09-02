@@ -1,5 +1,13 @@
 on: workflow_dispatch
 
+env:
+  AWS_REGION: "eu-central-1"
+
+# Permission can be added at job level or workflow level
+permissions:
+  id-token: write   # This is required for requesting the JWT
+  contents: read    # This is required for actions/checkout
+
 jobs:
   packer-build:
     runs-on: ubuntu-latest
@@ -23,3 +31,20 @@ jobs:
         id: validate
         working-directory: ./aws/test-ec2-secrets/packer
         run: "packer validate ./aws-ubuntu.pkr.hcl"
+
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
+        with:
+          role-to-assume: arn:aws:iam::853805194132:role/GitHubAction-Gitstafette #change to reflect your IAM role’s ARN
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: test aws credentials
+        run: aws ec2 describe-images --region eu-central-1
+
+      - name: Run `packer build`
+        id: build
+        working-directory: ./aws/test-ec2-secrets/packer
+        run: | 
+          packer build ./aws-ubuntu.pkr.hcl
+          cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2

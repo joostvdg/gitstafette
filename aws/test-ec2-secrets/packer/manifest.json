@@ -1,0 +1,68 @@
+{
+  "builds": [
+    {
+      "name": "ubuntu",
+      "builder_type": "amazon-ebs",
+      "build_time": 1720125719,
+      "files": null,
+      "artifact_id": "eu-central-1:ami-09564fc493f107560",
+      "packer_run_uuid": "6546e66c-0718-da20-2e89-a358800a4f86",
+      "custom_data": null
+    },
+    {
+      "name": "ubuntu",
+      "builder_type": "amazon-ebs",
+      "build_time": 1720213141,
+      "files": null,
+      "artifact_id": "eu-central-1:ami-046febb4660969cf4",
+      "packer_run_uuid": "bf27fcd7-bf65-cb50-1cab-d8b6812336d8",
+      "custom_data": null
+    },
+    {
+      "name": "ubuntu",
+      "builder_type": "amazon-ebs",
+      "build_time": 1720556201,
+      "files": null,
+      "artifact_id": "eu-central-1:ami-0b53b6e7ad3d7a0d8",
+      "packer_run_uuid": "0785cb94-30eb-fcad-ce1c-75023f8f8424",
+      "custom_data": null
+    },
+    {
+      "name": "ubuntu",
+      "builder_type": "amazon-ebs",
+      "build_time": 1720557390,
+      "files": null,
+      "artifact_id": "eu-central-1:ami-03b78c80755a7b842",
+      "packer_run_uuid": "e20140f2-3ac0-1283-1aae-deb4f9d4e995",
+      "custom_data": null
+    },
+    {
+      "name": "ubuntu",
+      "builder_type": "amazon-ebs",
+      "build_time": 1720730079,
+      "files": null,
+      "artifact_id": "eu-central-1:ami-0772a0d11faec9dcc",
+      "packer_run_uuid": "b2eba744-a2a0-1b3a-61d2-cca1d660cb3b",
+      "custom_data": null
+    },
+    {
+      "name": "ubuntu",
+      "builder_type": "amazon-ebs",
+      "build_time": 1724791127,
+      "files": null,
+      "artifact_id": "eu-central-1:ami-03b702a99fffe38b4",
+      "packer_run_uuid": "02176931-bbb3-e159-35e7-683091c6b046",
+      "custom_data": null
+    },
+    {
+      "name": "ubuntu",
+      "builder_type": "amazon-ebs",
+      "build_time": 1725209993,
+      "files": null,
+      "artifact_id": "eu-central-1:ami-0197cd16f31a182d2",
+      "packer_run_uuid": "a25921c0-8ceb-371a-51bc-88714e87a452",
+      "custom_data": null
+    }
+  ],
+  "last_run_uuid": "a25921c0-8ceb-371a-51bc-88714e87a452"
+}

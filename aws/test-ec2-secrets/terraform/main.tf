@@ -7,12 +7,19 @@ terraform {
   }
 }
 
-provider "aws" {
-  access_key = var.aws_access_key
-  secret_key = var.aws_secret_key
-  region     = var.aws_region
-}
+# provider "aws" {
+#   access_key = var.aws_access_key
+#   secret_key = var.aws_secret_key
+#   region     = var.aws_region
+# }
 
+terraform {
+  backend "s3" {
+    bucket = "gitstafette-tf"
+    key    = "gsf-demo-01"
+    region = "eu-central-1"
+  }
+}
 
 resource "aws_eip" "lb" {
   instance = aws_instance.gistafette.id

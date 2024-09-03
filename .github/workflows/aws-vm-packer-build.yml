@@ -89,7 +89,7 @@ jobs:
         run: |
           terraform plan \
             -var "ami_id=${AMI_ID}" \
-            -no-color -out tfplan \
+            -no-color -out plan.out \
             -input=false
 
       #     https://github.com/camillehe1992/demo-for-aws-deployment-via-oidc/blob/main/.github/workflows/deploy.yaml
@@ -97,4 +97,4 @@ jobs:
       - name: Terraform apply
         working-directory:  ./aws/test-ec2-secrets/terraform
         run: |
-          terraform apply -auto-approve tfplan -input=false -no-color
+          terraform apply -auto-approve -input=false "plan.out"

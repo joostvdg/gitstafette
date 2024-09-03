@@ -1,0 +1,40 @@
+on: workflow_dispatch
+
+jobs:
+  packer-build:
+    runs-on: ubuntu-latest
+    name: Packer AMI Build
+    outputs:
+      ami_id: ${{ steps.packer.outputs.ami_id }}
+    steps:
+
+    - name: Run Packer Build
+      id: packer
+      working-directory: ./aws/test-ec2-secrets/packer
+      run: |
+        # write manifest.json to disk
+        echo '{
+          "builds": [
+            {
+              "artifact_id": "aws-ami:us-east-1:ami-0a1234567890abcdef"
+            }
+          ]
+        }' > manifest.json
+        cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2
+        ami_id=$(manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2)
+        echo "ami_id=${ami_id}" | tee -a $GITHUB_OUTPUT
+
+
+  terraform-build:
+    runs-on: ubuntu-latest
+    name: Gitstafette AWS VM Rebuild
+    needs: packer-build
+    steps:
+
+    - name: Run Terraform Plan
+      env:
+        AMI_ID: ${{ needs.packer-build.outputs.ami_id }}
+      id: terraform-plan
+      working-directory: ./aws/test-ec2-secrets/terraform
+      run: |
+        echo "AMI_ID=${AMI_ID}"

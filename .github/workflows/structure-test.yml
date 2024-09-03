@@ -7,7 +7,8 @@ jobs:
     outputs:
       ami_id: ${{ steps.packer.outputs.ami_id }}
     steps:
-
+    - name: Checkout code
+      uses: actions/checkout@v2
     - name: Run Packer Build
       id: packer
       working-directory: ./aws/test-ec2-secrets/packer
@@ -30,7 +31,8 @@ jobs:
     name: Gitstafette AWS VM Rebuild
     needs: packer-build
     steps:
-
+    - name: Checkout code
+      uses: actions/checkout@v2
     - name: Run Terraform Plan
       env:
         AMI_ID: ${{ needs.packer-build.outputs.ami_id }}

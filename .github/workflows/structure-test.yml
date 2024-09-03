@@ -13,16 +13,8 @@ jobs:
       id: packer
       working-directory: ./aws/test-ec2-secrets/packer
       run: |
-        # write manifest.json to disk
-        echo '{
-          "builds": [
-            {
-              "artifact_id": "aws-ami:us-east-1:ami-0a1234567890abcdef"
-            }
-          ]
-        }' > manifest.json
         cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2
-        ami_id=$(manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2)
+        ami_id=$(cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2)
         echo "ami_id=${ami_id}" | tee -a $GITHUB_OUTPUT
 
 

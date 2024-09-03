@@ -48,9 +48,10 @@ jobs:
         id: build
         working-directory: ./aws/test-ec2-secrets/packer
         run: | 
-          packer build ./aws-ubuntu.pkr.hcl
-          cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2
-          ami_id=$(cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2)
+#          packer build ./aws-ubuntu.pkr.hcl
+#          cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2
+#          ami_id=$(cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2)
+          ami_id="ami-09652ef7f1166e7d3"
           echo "ami_id=${ami_id}" | tee -a $GITHUB_OUTPUT
 
   terraform-build:

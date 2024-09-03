@@ -41,16 +41,17 @@ jobs:
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: test aws credentials
-        run: aws ec2 describe-images --region eu-central-1
+      # this is a massive file, 1M+ lines
+      #- name: test aws credentials
+      #  run: aws ec2 describe-images --region eu-central-1
 
       - name: Run `packer build`
         id: build
         working-directory: ./aws/test-ec2-secrets/packer
         run: | 
-          #          packer build ./aws-ubuntu.pkr.hcl
-          #          cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2
-          #          ami_id=$(cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2)
+          packer build ./aws-ubuntu.pkr.hcl
+          cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2
+          ami_id=$(cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2)
           ami_id="ami-09652ef7f1166e7d3"
           echo "ami_id=${ami_id}" | tee -a $GITHUB_OUTPUT
 
@@ -101,10 +102,20 @@ jobs:
             exit 0
           fi
 
-#     https://github.com/camillehe1992/demo-for-aws-deployment-via-oidc/blob/main/.github/workflows/deploy.yaml
+      - id: tf-apply-approval
+        name: Manual Approval
+        uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ github.TOKEN }}
+          approvers: joostvdg
+          minimum-approvals: 1
+          issue-title: "Applying Terraform Plan - AMI ID: ${{ needs.packer-build.outputs.ami_id }}"
+          issue-body: "Review the terraform plan, then approve or deny the deployment of  ${{ needs.packer-build.outputs.ami_id }} AMI."
+          exclude-workflow-initiator-as-approver: false
+
+      #     https://github.com/camillehe1992/demo-for-aws-deployment-via-oidc/blob/main/.github/workflows/deploy.yaml
       # Apply the pending changes
-#      - name: Terraform apply
-#        if: ${{ steps.tf-plan.outputs.exitcode == 2 }}
-#        working-directory:  ./aws/test-ec2-secrets/terraform
-#        run: |
-#          terraform apply -auto-approve tfplan -input=false -no-color
+      - name: Terraform apply
+        working-directory:  ./aws/test-ec2-secrets/terraform
+        run: |
+          terraform apply -auto-approve tfplan -input=false -no-color

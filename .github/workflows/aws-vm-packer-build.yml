@@ -12,9 +12,11 @@ jobs:
   packer-build:
     runs-on: ubuntu-latest
     name: Run Packer
+    outputs:
+      ami_id: ${{ steps.packer.outputs.ami_id }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Setup `packer`
         uses: hashicorp/setup-packer@main
@@ -48,3 +50,42 @@ jobs:
         run: | 
           packer build ./aws-ubuntu.pkr.hcl
           cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2
+          ami_id=$(cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2)
+          echo "ami_id=${ami_id}" | tee -a $GITHUB_OUTPUT
+
+  terraform-build:
+    runs-on: ubuntu-latest
+    name: Gitstafette AWS VM Rebuild
+    needs: packer-build
+    steps:
+      - id: tf-checkout
+        name: Checkout code for TF
+        uses: actions/checkout@v4
+      - id: tf-aws-creds
+        name: Configure AWS credentials for Terraform
+        uses: aws-actions/configure-aws-credentials@v1.7.0
+        with:
+          role-to-assume: arn:aws:iam::853805194132:role/GitHubAction-Gitstafette #change to reflect your IAM role’s ARN
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ env.AWS_REGION }}
+      - id: tf-setup
+        name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+      - id: tf-init
+        name: Terraform Init
+        working-directory: ./aws/test-ec2-secrets/terraform
+        run: terraform init
+      - id: tf-validate
+        name: Terraform Validate
+        working-directory: ./aws/test-ec2-secrets/terraform
+        run: terraform validate -no-color
+      - id: tf-plan
+        name: Terraform Plan
+        env:
+          AMI_ID: ${{ needs.packer-build.outputs.ami_id }}
+        working-directory: ./aws/test-ec2-secrets/terraform
+        continue-on-error: true
+        run: |
+          terraform plan -var "ami_id=${AMI_ID}" -no-color
+
+          

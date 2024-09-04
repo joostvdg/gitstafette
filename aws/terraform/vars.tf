@@ -1,19 +1,7 @@
-variable "aws_access_key" {
-  type = string
-  description = "AWS access key"
-  sensitive = true
-}
-
-variable "aws_secret_key" {
-  type = string
-  description = "AWS secret key"
-  sensitive = true
-}
-
 variable "ami_id" {
   description = "ID of the AMI"
-  default = "ami-007a81f5aab7de049"
-  // new AMI from 2024-07-04 ami-09564fc493f107560
+  default = "ami-09652ef7f1166e7d3"
+  // new AMI from 2024-09-04 ami-09652ef7f1166e7d3
 }
 
 variable "ssh_key_name" {

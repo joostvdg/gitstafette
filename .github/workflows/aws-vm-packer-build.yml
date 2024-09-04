@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Run Packer
     outputs:
-      ami_id: ${{ steps.packer.outputs.ami_id }}
+      ami_id: ${{ steps.build.outputs.ami_id }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -87,6 +87,8 @@ jobs:
           AMI_ID: ${{ needs.packer-build.outputs.ami_id }}
         working-directory: ./aws/test-ec2-secrets/terraform
         run: |
+          echo "AMI_ID=${AMI_ID}"
+          export TF_VAR_ami_id=${AMI_ID}
           terraform plan \
             -var "ami_id=${AMI_ID}" \
             -no-color -out plan.out \

@@ -26,12 +26,12 @@ jobs:
 
       - name: Run `packer init`
         id: init
-        working-directory: ./aws/test-ec2-secrets/packer
+        working-directory: ./aws/packer
         run: "packer init ./aws-ubuntu.pkr.hcl"
 
       - name: Run `packer validate`
         id: validate
-        working-directory: ./aws/test-ec2-secrets/packer
+        working-directory: ./aws/packer
         run: "packer validate ./aws-ubuntu.pkr.hcl"
 
       - name: configure aws credentials
@@ -47,7 +47,7 @@ jobs:
 
       - name: Run `packer build`
         id: build
-        working-directory: ./aws/test-ec2-secrets/packer
+        working-directory: ./aws/packer
         run: | 
           packer build ./aws-ubuntu.pkr.hcl
           cat manifest.json | jq -r '.builds[-1].artifact_id' |  cut -d':' -f2
@@ -75,17 +75,17 @@ jobs:
         uses: hashicorp/setup-terraform@v3
       - id: tf-init
         name: Terraform Init
-        working-directory: ./aws/test-ec2-secrets/terraform
+        working-directory: ./aws/terraform
         run: terraform init
       - id: tf-validate
         name: Terraform Validate
-        working-directory: ./aws/test-ec2-secrets/terraform
+        working-directory: ./aws/terraform
         run: terraform validate -no-color
       - id: tf-plan
         name: Terraform Plan
         env:
           AMI_ID: ${{ needs.packer-build.outputs.ami_id }}
-        working-directory: ./aws/test-ec2-secrets/terraform
+        working-directory: ./aws/terraform
         run: |
           echo "AMI_ID=${AMI_ID}"
           export TF_VAR_ami_id=${AMI_ID}

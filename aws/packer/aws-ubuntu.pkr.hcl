@@ -8,12 +8,12 @@ packer {
 }
 
 source "amazon-ebs" "ubuntu" {
-  ami_name      = "gitstafette-server"
+  ami_name      = "${var.ami_prefix}-${local.date}"
   instance_type = "t4g.nano"
   region        = "eu-central-1"
   source_ami_filter {
     filters = {
-      name                = "ubuntu/images/*ubuntu-jammy-22.04-arm64-server-*"
+      name                = "ubuntu/images/*ubuntu-*-24.04-arm64-server-*"
       root-device-type    = "ebs"
       virtualization-type = "hvm"
     }
@@ -28,6 +28,8 @@ build {
   sources = [
     "source.amazon-ebs.ubuntu"
   ]
+
+
   provisioner "shell" {
     inline = [
       "sudo apt-get update",
@@ -40,8 +42,42 @@ build {
       "sudo systemctl status docker",
       "sudo usermod -aG docker ubuntu",
       "docker compose version",
+      "sudo snap install btop",
+      "sudo snap install aws-cli --classic",
+      "aws --version",
+      "sudo apt upgrade -y",
     ]
   }
+
+  provisioner "file" {
+    source = "../docker-compose"
+    destination = "/home/ubuntu/gitstafette"
+  }
+
+  provisioner "shell" {
+    inline = [
+      "cd /home/ubuntu/gitstafette",
+      "chmod +x /home/ubuntu/gitstafette/scripts/*.sh",
+      "sudo su - ubuntu -c 'docker compose version'",
+      "sudo su - ubuntu -c 'docker compose --project-directory=/home/ubuntu/gitstafette --progress=plain pull '",
+    ]
+  }
+
+
+  post-processor "manifest" {
+    output     = "manifest.json"
+    strip_path = true
+  }
+
 }
 
-// MY IP: 77.174.22.146/32
+
+locals {
+  date = formatdate("YYYY-MM-DD-hh-mm", timestamp())
+}
+
+variable "ami_prefix" {
+  type    = string
+  default = "gitstafette-server"
+}
+

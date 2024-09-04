@@ -2,21 +2,22 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 4.6.0"
+      version = "~> 5.65.0"
     }
   }
 }
 
-provider "aws" {
-  access_key = var.aws_access_key
-  secret_key = var.aws_secret_key
-  region     = var.aws_region
+terraform {
+  backend "s3" {
+    bucket = "gitstafette-tf"
+    key    = "gsf-backend-prod"
+    region = "eu-central-1"
+  }
 }
-
 
 resource "aws_eip" "lb" {
   instance = aws_instance.gistafette.id
-  vpc      = true
+  domain   = "vpc"
 }
 
 # datasource for vpc to collect object?
@@ -83,6 +84,16 @@ resource "aws_instance" "gistafette" {
   source_dest_check           = false
   key_name                    = var.ssh_key_name
 
+  iam_instance_profile        = aws_iam_instance_profile.ec2_instance_profile.name
+
+  instance_market_options {
+    market_type = "spot"
+    spot_options {
+      instance_interruption_behavior = "stop"
+      spot_instance_type             = "persistent"
+    }
+  }
+
   # root disk
   root_block_device {
     volume_size           = var.linux_root_volume_size
@@ -91,7 +102,10 @@ resource "aws_instance" "gistafette" {
     encrypted             = true
   }
 
+  user_data = file("${path.module}/startup.sh")
+
   tags = {
-    Name = "gistafette"
+    Name = "GSF-BE-Prod"
+    Environment = "production"
   }
 }

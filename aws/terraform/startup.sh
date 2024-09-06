@@ -21,15 +21,24 @@ echo "Writing secrets to .env file..."
 echo "AWS_ACCESS_KEY_ID=$DNS_ACCESS_KEY" > ./override.env
 echo "AWS_SECRET_ACCESS_KEY=$DNS_ACCESS_SECRET" >> ./override.env
 echo "SENTRY_DSN=$SENTRY_DSN" >> ./override.env
-echo "WEBHOOK_OAUTH_TOKEN=$WEBHOOK_OAUTH_TOKEN" >> ./override.env
+echo "OAUTH_TOKEN=$WEBHOOK_OAUTH_TOKEN" >> ./override.env
 
 aws s3 cp s3://gitstafette-resources/ca.pem ./certs/ca.pem
 aws s3 cp s3://gitstafette-resources/events-aws-key.pem ./certs/events-aws-key.pem
 aws s3 cp s3://gitstafette-resources/events-aws.pem ./certs/events-aws.pem
 
-echo "Starting Docker Compose..."
-docker compose up -d
+echo "Starting Docker Compose components..."
+
+echo "Starting CertBot..."
+docker compose up certbot -d
 
 sleep 5
+echo "Starting Cert-Copy..."
+docker compose up cert-copy -d
+
+echo "Starting Envoy and Gitstafette Server..."
+docker compose up -d
+
+sleep 20
 echo "Docker Compose started"
 docker compose ps

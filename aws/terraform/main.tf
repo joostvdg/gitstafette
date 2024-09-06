@@ -84,7 +84,7 @@ resource "aws_instance" "gistafette" {
   source_dest_check           = false
   key_name                    = var.ssh_key_name
 
-  iam_instance_profile        = aws_iam_instance_profile.ec2_instance_profile.name
+  iam_instance_profile        =  var.ec2_role_name
 
   instance_market_options {
     market_type = "spot"

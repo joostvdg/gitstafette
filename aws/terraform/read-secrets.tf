@@ -41,7 +41,7 @@
 #   policy_arn = aws_iam_policy.secrets_manager_access.arn
 # }
 #
-resource "aws_iam_instance_profile" "ec2_instance_profile" {
-  name = "ec2_instance_profile"
-  role = var.ec2_role_name
-}
+# resource "aws_iam_instance_profile" "ec2_instance_profile" {
+#   name = "ec2_instance_profile"
+#   role = var.ec2_role_name
+# }

@@ -98,6 +98,6 @@ jobs:
       #     https://github.com/camillehe1992/demo-for-aws-deployment-via-oidc/blob/main/.github/workflows/deploy.yaml
       # Apply the pending changes
       - name: Terraform apply
-        working-directory:  ./aws/test-ec2-secrets/terraform
+        working-directory: ./aws/terraform
         run: |
           terraform apply -auto-approve -input=false "plan.out"

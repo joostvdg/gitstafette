@@ -56,6 +56,7 @@ func SetupOTelSDK(ctx context.Context, serviceName, serviceVersion string) (shut
 	// Set up resource.
 	res, err := newResource(otelConfig.serviceName, serviceVersion)
 	if err != nil {
+		log.Warn().Err(err).Msg("failed to create resource")
 		handleErr(err)
 		return
 	}
@@ -67,6 +68,7 @@ func SetupOTelSDK(ctx context.Context, serviceName, serviceVersion string) (shut
 	// Set up trace provider.
 	tracerProvider, err = newTraceProvider(res, otelConfig)
 	if err != nil {
+		log.Warn().Err(err).Msg("failed to create trace provider")
 		handleErr(err)
 		return
 	}
@@ -76,6 +78,7 @@ func SetupOTelSDK(ctx context.Context, serviceName, serviceVersion string) (shut
 	// Set up meter provider.
 	meterProvider, err = newMeterProvider(res)
 	if err != nil {
+		log.Warn().Err(err).Msg("failed to create meter provider")
 		handleErr(err)
 		return
 	}
@@ -106,7 +109,8 @@ func newTraceProvider(res *resource.Resource, config *OTELConfig) (*sdktrace.Tra
 	// Set up a trace exporter
 
 	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	timeoutDurationInSeconds := time.Second * 5
+	ctx, cancel := context.WithTimeout(ctx, timeoutDurationInSeconds)
 	defer cancel()
 	conn, err := grpc.DialContext(ctx, otelConfig.GetOTELEndpoint(),
 		// Note the use of insecure transport here. TLS is recommended in production.

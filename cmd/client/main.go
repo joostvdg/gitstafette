@@ -94,14 +94,14 @@ func main() {
 	if otel_util.IsOTelEnabled() {
 		sublogger.Info().Msg("OTEL is enabled")
 		otelShutdown, err, _, tp := otel_util.SetupOTelSDK(ctx, "gsf-client", "0.0.1")
-		tracer = tp.Tracer("gsf-client")
 		if err != nil {
-			log.Fatal().Err(err).Msg("Could not configure OTEL URL")
+			log.Err(err).Msg("Could not configure OTEL URL")
 		}
 		// Handle shutdown properly so nothing leaks.
 		defer func() {
 			err = errors.Join(err, otelShutdown(context.Background()))
 		}()
+		tracer = tp.Tracer("gsf-client")
 	}
 
 	relayConfig, err := api.CreateRelayConfig(*relayEnabled, *relayHost, *relayPath, *relayHealthCheckPath, *relayPort, *relayProtocol, *relayInsecure)

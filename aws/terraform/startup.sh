@@ -32,9 +32,12 @@ echo "Starting Docker Compose components..."
 echo "Starting CertBot..."
 docker compose up certbot -d
 
-sleep 5
+sleep 20
 echo "Starting Cert-Copy..."
 docker compose up cert-copy -d
+
+sleep 10
+docker compose restart cert-copy
 
 echo "Starting Envoy and Gitstafette Server..."
 docker compose up -d

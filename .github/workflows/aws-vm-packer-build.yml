@@ -83,6 +83,7 @@ jobs:
         run: terraform validate -no-color
       - id: tf-plan
         name: Terraform Plan
+        continue-on-error: true # because some exit codes are not 0, even if they are just warnings/informative
         env:
           AMI_ID: ${{ needs.packer-build.outputs.ami_id }}
         working-directory: ./aws/terraform

@@ -109,3 +109,29 @@ resource "aws_instance" "gistafette" {
     Environment = "production"
   }
 }
+
+resource "aws_cloudwatch_metric_alarm" "test" {
+    actions_enabled           = true
+    alarm_actions             = [
+      "arn:aws:swf:eu-central-1:853805194132:action/actions/AWS_EC2.InstanceId.Reboot/1.0",
+    ]
+    alarm_description         = "Alarm on instance i-0bb0411cd0368a546: Triggered when CPUCreditUsage >= 2 for 3 consecutive 1-minute periods."
+    alarm_name                = "awsec2-i-0bb0411cd0368a546-GreaterThanOrEqualToThreshold-CPUCreditUsage"
+    comparison_operator       = "GreaterThanOrEqualToThreshold"
+    datapoints_to_alarm       = 3
+    dimensions                = {
+      "InstanceId" = aws_instance.gistafette.id
+    }
+    evaluation_periods        = 3
+    id                        = "awsec2-i-0bb0411cd0368a546-GreaterThanOrEqualToThreshold-CPUCreditUsage"
+    insufficient_data_actions = []
+    metric_name               = "CPUCreditUsage"
+    namespace                 = "AWS/EC2"
+    ok_actions                = []
+    period                    = 60
+    statistic                 = "Maximum"
+    tags                      = {}
+    tags_all                  = {}
+    threshold                 = 2
+    treat_missing_data        = "missing"
+}

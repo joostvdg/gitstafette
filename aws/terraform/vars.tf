@@ -45,7 +45,7 @@ variable "subnet_id" {
 variable "linux_instance_type" {
   type        = string
   description = "EC2 instance type for Linux Server"
-  default     = "t4g.nano"
+  default     = "t4g.micro"
 }
 
 variable "linux_associate_public_ip_address" {

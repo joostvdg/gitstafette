@@ -59,7 +59,7 @@ docker compose up cmg-ui -d
 sleep 5
 
 echo "Starting Envoy..."
-docker compose up -d
+docker compose up envoy -d
 
 sleep 20
 echo "Docker Compose started"

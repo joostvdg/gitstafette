@@ -31,6 +31,10 @@ static_resources:
         socket_address:
           address: 0.0.0.0
           port_value: 443
+      listener_filters:
+        - name: "envoy.filters.listener.tls_inspector"
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
       filter_chains:
         - filter_chain_match:
             server_names: ["events.gitstafette.joostvdg.net"]

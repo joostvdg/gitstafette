@@ -19,6 +19,7 @@ services:
       resources:
         limits:
           cpus: '0.15'
+          memory: 20M
         reservations:
           cpus: '0.10'
 
@@ -34,6 +35,7 @@ services:
       resources:
         limits:
           cpus: '0.15'
+          memory: 30M
         reservations:
           cpus: '0.10'
     env_file:
@@ -54,6 +56,7 @@ services:
       resources:
         limits:
           cpus: '0.15'
+          memory: 30M
         reservations:
           cpus: '0.10'
     env_file:
@@ -88,8 +91,6 @@ services:
       - 8082:8082
 
   gitstafette-server:
-    restart: unless-stopped
-    init: true
     image: ghcr.io/joostvdg/gitstafette/server:0.3.0 #ghcr.io/joostvdg/gitstafette/server:0.1.0-3dfea6d
     command: [
       "--repositories=537845873,478599060,758715872,763032882,502306743",
@@ -124,21 +125,37 @@ services:
         required: true # default
       - path: ./override.env
         required: false
-
+    deploy:
+      restart_policy:
+        condition: unless-stopped
+        delay: 10s
+      resources:
+        limits:
+          cpus: '0.15'
+          memory: 30M
+        reservations:
+          cpus: '0.10'
 
   cmg:
-    restart: unless-stopped
-    init: true
     image: ghcr.io/joostvdg/cmg:0.3.3
     env_file:
       - path: ./default.env
         required: true # default
       - path: ./override-cmg.env
         required: false
+    deploy:
+      restart_policy:
+        condition: unless-stopped
+        delay: 5s
+      resources:
+        limits:
+          cpus: '0.15'
+          memory: 30M
+        reservations:
+          cpus: '0.10'
 
   cmg-ui:
-    restart: unless-stopped
-    image: ghcr.io/joostvdg/cmg-ui:1.0.0
+    image: ghcr.io/joostvdg/cmg-ui:1.1.0
     depends_on:
       - cmg
     env_file:
@@ -146,6 +163,16 @@ services:
         required: true # default
       - path: ./override-cmg.env
         required: false
+    deploy:
+      restart_policy:
+        condition: unless-stopped
+        delay: 5s
+      resources:
+        limits:
+          cpus: '0.15'
+          memory: 30M
+        reservations:
+          cpus: '0.10'
 
 secrets:
   certificate:

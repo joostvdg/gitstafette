@@ -1,18 +1,18 @@
 variable "ami_id" {
   description = "ID of the AMI"
-  default = "ami-09652ef7f1166e7d3"
+  default     = "ami-09652ef7f1166e7d3"
   // new AMI from 2024-09-04 ami-09652ef7f1166e7d3
 }
 
 variable "ssh_key_name" {
   description = "AWS SSH Key Name"
-  default = "gitstafette"
+  default     = "gitstafette"
 }
 
 variable "aws_region" {
-  type = string
+  type        = string
   description = "AWS region"
-  default = "eu-central-1"
+  default     = "eu-central-1"
 }
 
 # AWS AZ
@@ -37,9 +37,9 @@ variable "vpc_id" {
 }
 
 variable "subnet_id" {
-  type = string
+  type        = string
   description = "ID of the default subnet of your default VPC"
-  default = "subnet-84b1d9c9"
+  default     = "subnet-84b1d9c9"
 }
 
 variable "linux_instance_type" {

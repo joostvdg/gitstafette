@@ -24,7 +24,14 @@ resource "aws_route53_record" "events" {
 
 resource "aws_route53_record" "cmg-backend" {
   zone_id = aws_route53_zone.cmg.zone_id
-  name    = "backend.cmg.joostvdg.net"
+  name    = "map.cmg.joostvdg.net"
+  type    = "A"
+  ttl     = 300
+  records = [aws_eip.lb.public_ip]
+}
+resource "aws_route53_record" "cmg-ui" {
+  zone_id = aws_route53_zone.cmg.zone_id
+  name    = "be.cmg.joostvdg.net"
   type    = "A"
   ttl     = 300
   records = [aws_eip.lb.public_ip]

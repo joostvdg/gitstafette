@@ -10,15 +10,19 @@ services:
         target: /etc/copy_script.sh
     volumes:
       - certbot-certificates:/etc/certbot/certificates:ro
+      - certbot-cmg-certificates:/etc/certbot/certificates-cmg:ro
       - envoy-certificates:/etc/envoy/certificates:rw
     deploy:
       restart_policy:
         condition: unless-stopped
         delay: 60s
-
+      resources:
+        limits:
+          cpus: '0.15'
+        reservations:
+          cpus: '0.10'
 
   certbot:
-#    restart: unless-stopped
     image: certbot/dns-route53:arm64v8-v2.11.0
     command: [ "certonly", "-v", "--dns-route53", "-d", "events.gitstafette.joostvdg.net", "--email", "joostvdg@gmail.com", "--keep-until-expiring", "--agree-tos", "--non-interactive" ]
     volumes:
@@ -27,6 +31,31 @@ services:
       restart_policy:
         condition: unless-stopped
         delay: 60s
+      resources:
+        limits:
+          cpus: '0.15'
+        reservations:
+          cpus: '0.10'
+    env_file:
+      - path: ./default.env
+        required: true # default
+      - path: ./override.env
+        required: false
+
+  certbot-cmg:
+    image: certbot/dns-route53:arm64v8-v2.11.0
+    command: [ "certonly", "-v", "--dns-route53", "-d", "map.cmg.joostvdg.net","-d", "be.cmg.joostvdg.net",  "--email", "joostvdg@gmail.com", "--keep-until-expiring", "--agree-tos", "--non-interactive", "--expand" ]
+    volumes:
+      - certbot-cmg-certificates:/etc/letsencrypt
+    deploy:
+      restart_policy:
+        condition: unless-stopped
+        delay: 60s
+      resources:
+        limits:
+          cpus: '0.15'
+        reservations:
+          cpus: '0.10'
     env_file:
       - path: ./default.env
         required: true # default
@@ -34,8 +63,7 @@ services:
         required: false
 
   envoy:
-    image: envoyproxy/envoy:v1.22.8
-    restart: unless-stopped
+    image: envoyproxy/envoy:v1.31.0
     configs:
       - source: envoy_proxy
         target: /etc/envoy/envoy-proxy.yaml
@@ -43,6 +71,10 @@ services:
         gid: "103"
         mode: 0440
     command: /usr/local/bin/envoy -c /etc/envoy/envoy-proxy.yaml -l debug
+    deploy:
+      restart_policy:
+        condition: unless-stopped
+        delay: 10s
     depends_on:
       - cert-copy
       - gitstafette-server
@@ -93,6 +125,28 @@ services:
       - path: ./override.env
         required: false
 
+
+  cmg:
+    restart: unless-stopped
+    init: true
+    image: ghcr.io/joostvdg/cmg:0.3.3
+    env_file:
+      - path: ./default.env
+        required: true # default
+      - path: ./override-cmg.env
+        required: false
+
+  cmg-ui:
+    restart: unless-stopped
+    image: ghcr.io/joostvdg/cmg-ui:1.0.0
+    depends_on:
+      - cmg
+    env_file:
+      - path: ./default.env
+        required: true # default
+      - path: ./override-cmg.env
+        required: false
+
 secrets:
   certificate:
     file: ./certs/events-aws.pem
@@ -109,6 +163,7 @@ configs:
 
 volumes:
   certbot-certificates:
+  certbot-cmg-certificates:
   envoy-certificates:
 
 networks:

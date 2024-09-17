@@ -33,13 +33,32 @@ echo "Starting CertBot..."
 docker compose up certbot -d
 
 sleep 20
+
+echo "Starting CertBot CMG..."
+docker compose up certbot-cmg -d
+
+sleep 20
+
 echo "Starting Cert-Copy..."
 docker compose up cert-copy -d
 
 sleep 10
 docker compose restart cert-copy
 
-echo "Starting Envoy and Gitstafette Server..."
+sleep 10
+
+echo "Starting GitStafette..."
+docker compose up gitstafette-server -d
+
+sleep 5
+
+echo "Starting CMG..."
+docker compose up cmg -d
+docker compose up cmg-ui -d
+
+sleep 5
+
+echo "Starting Envoy..."
 docker compose up -d
 
 sleep 20

@@ -32,7 +32,9 @@ static_resources:
           address: 0.0.0.0
           port_value: 443
       filter_chains:
-        - filters:
+        - filter_chain_match:
+            server_names: ["events.gitstafette.joostvdg.net"]
+          filters:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
@@ -43,7 +45,7 @@ static_resources:
                   virtual_hosts:
                     - name: gitstafette-server
                       domains:
-                        - "events.gitstafette.joostvdg.net"
+                        - "*"
                       routes:
                         - match:
                             prefix: "/"
@@ -60,14 +62,49 @@ static_resources:
               common_tls_context:
                 tls_certificates:
                   - certificate_chain:
-                      filename: /etc/envoy/certificates/fullchain.pem
+                      filename: /etc/envoy/certificates/gsf-fullchain.pem
                     private_key:
-                      filename: /etc/envoy/certificates/privkey.pem
+                      filename: /etc/envoy/certificates/gsf-privkey.pem
+        - filter_chain_match:
+            server_names: ["*.cmg.joostvdg.net", "be.cmg.joostvdg.net", "map.cmg.joostvdg.net"]
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                codec_type: AUTO
+                stat_prefix: ingress_http
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: cmg_be
+                      domains: ["be.cmg.joostvdg.net", "be.cmg.joostvdg.net:*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          route: { cluster: cmg-be }
+                    - name: cmg_ui
+                      domains: ["map.cmg.joostvdg.net", "map.cmg.joostvdg.net:*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          route: { cluster: cmg-ui }
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                tls_certificates:
+                  - certificate_chain:
+                      filename: /etc/envoy/certificates/cmg-fullchain.pem
+                    private_key:
+                      filename: /etc/envoy/certificates/cmg-privkey.pem
+
 
   clusters:
     - name: gitstafette-server
-      connect_timeout: 8s
-      type: STATIC
+      type: STRICT_DNS
       lb_policy: ROUND_ROBIN
       load_assignment:
         cluster_name: gitstafette-server
@@ -76,21 +113,34 @@ static_resources:
               - endpoint:
                   address:
                     socket_address:
-                      address: 172.18.0.1
+                      address: gitstafette-server
+                      port_value: 1323
+    - name: cmg-be
+      connect_timeout: 0.25s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: cmg-be
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: cmg
                       port_value: 8080
-#  clusters:
-#    - name: gitstafette-server
-#      type: STRICT_DNS
-#      lb_policy: ROUND_ROBIN
-#      load_assignment:
-#        cluster_name: gitstafette-server
-#        endpoints:
-#          - lb_endpoints:
-#              - endpoint:
-#                  address:
-#                    socket_address:
-#                      address: gitstafette-server
-#                      port_value: 1323
+    - name: cmg-ui
+      connect_timeout: 0.25s
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: cmg-ui
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: cmg-ui
+                      port_value: 3000
 
 admin:
   address:

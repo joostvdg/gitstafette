@@ -9,7 +9,7 @@ packer {
 
 source "amazon-ebs" "ubuntu" {
   ami_name      = "${var.ami_prefix}-${local.date}"
-  instance_type = "t4g.nano"
+  instance_type = "t4g.micro"
   region        = "eu-central-1"
   source_ami_filter {
     filters = {

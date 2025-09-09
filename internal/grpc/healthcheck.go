@@ -8,6 +8,10 @@ import (
 // HealthCheckService implements grpc_health_v1.HealthServer
 type HealthCheckService struct{}
 
+func (s *HealthCheckService) List(ctx context.Context, request *grpc_health_v1.HealthListRequest) (*grpc_health_v1.HealthListResponse, error) {
+	return &grpc_health_v1.HealthListResponse{}, nil
+}
+
 // TODO add actual health checks
 func (s *HealthCheckService) Check(ctx context.Context, req *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
 	return &grpc_health_v1.HealthCheckResponse{

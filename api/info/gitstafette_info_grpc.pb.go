@@ -30,7 +30,7 @@ func NewInfoClient(cc grpc.ClientConnInterface) InfoClient {
 
 func (c *infoClient) GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error) {
 	out := new(GetInfoResponse)
-	err := c.cc.Invoke(ctx, "/gitstafette_info.Info/GetInfo", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/info.Info/GetInfo", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func _Info_GetInfo_Handler(srv interface{}, ctx context.Context, dec func(interf
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/gitstafette_info.Info/GetInfo",
+		FullMethod: "/info.Info/GetInfo",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(InfoServer).GetInfo(ctx, req.(*GetInfoRequest))
@@ -84,7 +84,7 @@ func _Info_GetInfo_Handler(srv interface{}, ctx context.Context, dec func(interf
 }
 
 var _Info_serviceDesc = grpc.ServiceDesc{
-	ServiceName: "gitstafette_info.Info",
+	ServiceName: "info.Info",
 	HandlerType: (*InfoServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

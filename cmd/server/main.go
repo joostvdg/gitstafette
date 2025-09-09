@@ -6,6 +6,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"strings"
+
 	"github.com/getsentry/sentry-go"
 	sentryecho "github.com/getsentry/sentry-go/echo"
 	internal_api "github.com/joostvdg/gitstafette/internal/api/v1"
@@ -23,11 +25,6 @@ import (
 	//semconv "go.opentelemetry.io/otel_util/semconv/v1.18.0"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/rs/zerolog/log"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/keepalive"
 	"net"
 	"net/http"
 	"os"
@@ -35,10 +32,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rs/zerolog/log"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+
 	infoapi "github.com/joostvdg/gitstafette/api/info"
 	api "github.com/joostvdg/gitstafette/api/v1"
 	"github.com/labstack/echo/v4"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 )
 
 // TODO add flags for target for Relay
@@ -49,9 +54,11 @@ const (
 )
 
 var (
-	mp          *sdkmetric.MeterProvider
-	tracer      trace.Tracer
-	otelEnabled bool
+	mp                 *sdkmetric.MeterProvider
+	tracer             trace.Tracer
+	otelEnabled        bool
+	errMissingMetadata = status.Errorf(codes.InvalidArgument, "missing metadata")
+	errInvalidToken    = status.Errorf(codes.Unauthenticated, "invalid token")
 )
 
 func main() {
@@ -231,8 +238,36 @@ var kasp = keepalive.ServerParameters{
 	Timeout:               10 * time.Second, // Wait 1 second for the ping ack before assuming the connection is dead
 }
 
+// valid validates the authorization.
+func valid(authorization []string) bool {
+	if len(authorization) < 1 {
+		return false
+	}
+	token := strings.TrimPrefix(authorization[0], "Bearer ")
+	// Perform the token validation here. For the sake of this example, the code
+	// here forgoes any of the usual OAuth2 token validation and instead checks
+	// for a token matching an arbitrary string.
+	return token == "some-secret-token"
+}
+
+func unaryInterceptor(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	// authentication (token verification)
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil, errMissingMetadata
+	}
+	if !valid(md["authorization"]) {
+		return nil, errInvalidToken
+	}
+	m, err := handler(ctx, req)
+	if err != nil {
+		log.Error().Err(err).Msg("RPC failed")
+	}
+	return m, err
+}
+
 func initializeGRPCHealthServer(grpcPort string) *grpc.Server {
-	grpcServer := grpc.NewServer(grpc.KeepaliveEnforcementPolicy(kaep), grpc.KeepaliveParams(kasp), grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()))
+	grpcServer := grpc.NewServer(grpc.KeepaliveEnforcementPolicy(kaep), grpc.KeepaliveParams(kasp), grpc.UnaryInterceptor(unaryInterceptor))
 
 	go func(s *grpc.Server) {
 		grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))

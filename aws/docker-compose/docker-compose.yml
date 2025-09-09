@@ -167,10 +167,9 @@ services:
         delay: 5s
       resources:
         limits:
-          memory: 85M
+          memory: 100M
         reservations:
-          memory: 40M
-          cpus: '0.10'
+          cpus: '0.25'
 
 secrets:
   certificate:

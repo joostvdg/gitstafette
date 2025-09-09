@@ -308,9 +308,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Optional: prevent rerun tagging when tag already existed
-  skipped-existing-tag:
-    needs: prepare
-    if: needs.prepare.outputs.tag_exists == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "Tag already exists: v${{ needs.prepare.outputs.version }}. Skipping release."
+#  skipped-existing-tag:
+#    needs: prepare
+#    if: needs.prepare.outputs.tag_exists == 'true'
+#    runs-on: ubuntu-latest
+#    steps:
+#      - run: echo "Tag already exists: v${{ needs.prepare.outputs.version }}. Skipping release."

@@ -1,0 +1,316 @@
+name: CI-Release
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write          # create tags, releases
+  packages: write          # push images
+  security-events: write   # codeql
+  id-token: write          # cosign keyless OIDC
+  actions: read
+
+env:
+  GO_VERSION: '1.22.x'
+  VERSION_BASE: '0.4'              # Update Major.Minor here when needed
+  MODULE: './...'
+  IMAGE_SERVER: ghcr.io/${{ github.repository_owner }}/gitstafette/server
+  IMAGE_CLIENT: ghcr.io/${{ github.repository_owner }}/gitstafette/client
+  REGISTRY: ghcr.io
+
+concurrency:
+  group: ci-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag_exists: ${{ steps.version.outputs.tag_exists }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need all tags
+
+      - name: Compute next semantic version
+        id: version
+        run: |
+          base="${VERSION_BASE}"
+          latest_patch=$(git tag -l "v${base}.*" \
+              | sed -E "s/^v${base}\.([0-9]+)$/\1/" \
+              | sort -n | tail -1)
+          if [ -z "$latest_patch" ]; then
+            next_patch=0
+          else
+            next_patch=$((latest_patch + 1))
+          fi
+          version="${base}.${next_patch}"
+          # If commit already tagged with this version, mark exists
+          if git rev-parse "v${version}" >/dev/null 2>&1; then
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+          fi
+          echo "version=${version}" >> $GITHUB_OUTPUT
+          echo "Computed version: ${version}"
+
+      - name: Set tag (if new)
+        if: steps.version.outputs.tag_exists == 'false'
+        run: |
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
+
+  codeql:
+    needs: prepare
+    if: needs.prepare.outputs.tag_exists == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+
+  build-test:
+    needs: prepare
+    if: needs.prepare.outputs.tag_exists == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Go mod download
+        run: go mod download
+
+      - name: Format check
+        run: |
+          diff=$(gofmt -l . || true)
+          if [ -n "$diff" ]; then
+            echo "Unformatted files:"
+            echo "$diff"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet $MODULE
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Tests
+        run: go test -race -count=1 -covermode=atomic -coverprofile=coverage.out $MODULE
+
+      - name: Upload coverage (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+      - name: Build server binary
+        run: make go-build-server
+
+      - name: Build client binary
+        run: make go-build-client
+
+      - name: Source SBOM (CycloneDX) server
+        run: make sbom-server || true
+
+      - name: Source SBOM (CycloneDX) client
+        run: make sbom-client || true
+
+      - name: Collect source SBOMs
+        run: |
+          mkdir -p artifacts
+          [ -f app-server.bom.json ] && cp app-server.bom.json artifacts/
+          [ -f app-client.bom.json ] && cp app-client.bom.json artifacts/
+
+      - name: Upload source SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-sboms
+          path: artifacts
+
+  images:
+    needs: [prepare, build-test]
+    if: needs.prepare.outputs.tag_exists == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set VERSION env
+        run: echo "VERSION=${{ needs.prepare.outputs.version }}" >> $GITHUB_ENV
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push Server Image
+        run: |
+          make dxpush-server PACKAGE_VERSION=${VERSION}
+      - name: Build & Push Client Image
+        run: |
+          make dxpush-client PACKAGE_VERSION=${VERSION}
+
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@v0.17.9
+
+      - name: Image SBOMs
+        run: |
+          mkdir -p image-sboms
+          syft "${IMAGE_SERVER}:${VERSION}" -o cyclonedx-json > image-sboms/server-image-sbom.cdx.json
+          syft "${IMAGE_CLIENT}:${VERSION}" -o cyclonedx-json > image-sboms/client-image-sbom.cdx.json
+
+      - name: Upload image SBOMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-sboms
+          path: image-sboms
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.2.4'
+
+      - name: Keyless sign images
+        env:
+          COSIGN_EXPERIMENTAL: 1
+        run: |
+          cosign sign --yes ${IMAGE_SERVER}:${VERSION}
+          cosign sign --yes ${IMAGE_CLIENT}:${VERSION}
+
+      - name: Generate provenance (SLSA-style) / attestation
+        env:
+          COSIGN_EXPERIMENTAL: 1
+        run: |
+          cosign provenance --predicate-type slsaprovenance ${IMAGE_SERVER}:${VERSION} > server-provenance.intoto.jsonl
+          cosign provenance --predicate-type slsaprovenance ${IMAGE_CLIENT}:${VERSION} > client-provenance.intoto.jsonl
+          cosign attest --yes --predicate image-sboms/server-image-sbom.cdx.json --type cyclonedx ${IMAGE_SERVER}:${VERSION}
+          cosign attest --yes --predicate image-sboms/client-image-sbom.cdx.json --type cyclonedx ${IMAGE_CLIENT}:${VERSION}
+          cosign verify-attestation ${IMAGE_SERVER}:${VERSION} --type cyclonedx
+          cosign verify-attestation ${IMAGE_CLIENT}:${VERSION} --type cyclonedx
+
+      - name: Collect signature & attestation info
+        run: |
+          mkdir -p sigs
+          echo "${IMAGE_SERVER}:${VERSION}" > sigs/images.txt
+          echo "${IMAGE_CLIENT}:${VERSION}" >> sigs/images.txt
+          # Rekor transparency log entries can be resolved later; capture digests:
+          docker pull ${IMAGE_SERVER}:${VERSION}
+          docker pull ${IMAGE_CLIENT}:${VERSION}
+          docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE_SERVER}:${VERSION} > sigs/server-digest.txt
+            docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE_CLIENT}:${VERSION} > sigs/client-digest.txt
+          cp server-provenance.intoto.jsonl sigs/
+          cp client-provenance.intoto.jsonl sigs/
+
+      - name: Upload signatures & provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: signatures-provenance
+          path: sigs
+
+      - name: Trivy Image Scan (server)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${IMAGE_SERVER}:${VERSION}
+          format: 'table'
+          exit-code: '0'
+          vuln-type: 'os,library'
+
+      - name: Trivy Image Scan (client)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${IMAGE_CLIENT}:${VERSION}
+          format: 'table'
+          exit-code: '0'
+          vuln-type: 'os,library'
+
+  release:
+    needs: [prepare, build-test, images, codeql]
+    if: needs.prepare.outputs.tag_exists == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Assemble release notes
+        id: notes
+        run: |
+          ver="${{ needs.prepare.outputs.version }}"
+          {
+            echo "## gitstafette v${ver}"
+            echo ""
+            echo "Images:"
+            echo "- Server: ${IMAGE_SERVER}:${ver}"
+            echo "- Client: ${IMAGE_CLIENT}:${ver}"
+            echo ""
+            echo "Artifacts included:"
+            echo "- Source SBOMs"
+            echo "- Image SBOMs"
+            echo "- Cosign provenance & digests"
+            echo "- Signatures (verifiable via transparency log)"
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.prepare.outputs.version }}
+          name: v${{ needs.prepare.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            dist/source-sboms/**
+            dist/image-sboms/**
+            dist/signatures-provenance/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Optional: prevent rerun tagging when tag already existed
+  skipped-existing-tag:
+    needs: prepare
+    if: needs.prepare.outputs.tag_exists == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Tag already exists: v${{ needs.prepare.outputs.version }}. Skipping release."

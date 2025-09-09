@@ -14,7 +14,7 @@ type GitstafetteContext struct {
 
 type ServiceContext struct {
 	context.Context
-	Relay           *gitstafette_v1.RelayConfig
+	Relay *gitstafette_v1.RelayConfig
 }
 
 type Service func(*ServiceContext)

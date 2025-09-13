@@ -1,5 +1,5 @@
 # copied from: https://github.com/GoogleCloudPlatform/golang-samples/blob/main/run/grpc-server-streaming/Dockerfile
-FROM golang:1.21-bookworm as builder
+FROM golang:1.25-trixie AS builder
 ARG TARGETARCH
 ARG TARGETOS
 WORKDIR /go/src/gitstafette
@@ -8,7 +8,7 @@ RUN go mod download
 COPY . .
 RUN make go-build-client
 
-FROM debian:buster-slim
+FROM debian:buster-slim AS runtime
 EXPOSE 1323
 EXPOSE 50051
 ENV PORT=8080

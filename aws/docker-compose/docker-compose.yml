@@ -20,8 +20,6 @@ services:
         limits:
           cpus: '0.15'
           memory: 20M
-        reservations:
-          cpus: '0.10'
 
   certbot:
     image: certbot/dns-route53:arm64v8-v2.11.0
@@ -36,8 +34,6 @@ services:
         limits:
           cpus: '0.15'
           memory: 80M
-        reservations:
-          cpus: '0.10'
     env_file:
       - path: ./default.env
         required: true # default
@@ -57,8 +53,6 @@ services:
         limits:
           cpus: '0.15'
           memory: 80M
-        reservations:
-          cpus: '0.10'
     env_file:
       - path: ./default.env
         required: true # default
@@ -132,8 +126,6 @@ services:
       resources:
         limits:
           memory: 30M
-        reservations:
-          cpus: '0.10'
 
   cmg:
     image: ghcr.io/joostvdg/cmg:0.3.3
@@ -149,8 +141,6 @@ services:
       resources:
         limits:
           memory: 30M
-        reservations:
-          cpus: '0.10'
 
   cmg-ui:
     image: ghcr.io/joostvdg/cmg-ui:1.1.0
@@ -168,8 +158,6 @@ services:
       resources:
         limits:
           memory: 100M
-        reservations:
-          cpus: '0.25'
 
 secrets:
   certificate:

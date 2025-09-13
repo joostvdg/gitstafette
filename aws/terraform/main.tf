@@ -91,6 +91,7 @@ resource "aws_instance" "gistafette" {
     spot_options {
       instance_interruption_behavior = "stop"
       spot_instance_type             = "persistent"
+      max_price = 0.0050
     }
   }
 

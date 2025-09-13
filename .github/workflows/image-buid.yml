@@ -134,6 +134,11 @@ jobs:
       - name: Build client binary
         run: make go-build-client
 
+      - name: Install cyclonedx-gomod
+        run: |
+          go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
       - name: Source SBOM (CycloneDX) server
         run: make sbom-server || true
 

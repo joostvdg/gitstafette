@@ -1,6 +1,6 @@
 services:
   cert-copy:
-    image: bitnami/minideb:latest
+    image: debian:trixie-slim
     restart: unless-stopped
     command: ["./etc/copy_script.sh"]
     depends_on:
@@ -60,7 +60,7 @@ services:
         required: false
 
   envoy:
-    image: envoyproxy/envoy:v1.31.0
+    image: envoyproxy/envoy:v1.35.3
     configs:
       - source: envoy_proxy
         target: /etc/envoy/envoy-proxy.yaml

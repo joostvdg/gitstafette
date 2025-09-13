@@ -1,6 +1,10 @@
 # gitstafette
 
 ![GitstafetteAWS](https://cronitor.io/badges/kauC1R/production/3yVCEN51c1McT7VDklAzqJqNrP8.svg)
+[![CI-Release](https://github.com/joostvdg/gitstafette/actions/workflows/image-buid.yml/badge.svg)](https://github.com/joostvdg/gitstafette/actions/workflows/image-buid.yml)
+[![.github/workflows/aws-vm-packer-build.yml](https://github.com/joostvdg/gitstafette/actions/workflows/aws-vm-packer-build.yml/badge.svg)](https://github.com/joostvdg/gitstafette/actions/workflows/aws-vm-packer-build.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=joostvdg_gitstafette&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=joostvdg_gitstafette)
+
 
 Git Webhook Relay demo app
 

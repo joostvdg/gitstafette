@@ -8,7 +8,7 @@ RUN go mod download
 COPY . .
 RUN make go-build-client
 
-FROM debian:buster-slim AS runtime
+FROM debian:trixie-slim AS runtime
 EXPOSE 1323
 EXPOSE 50051
 ENV PORT=8080

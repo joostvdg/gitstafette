@@ -236,9 +236,6 @@ jobs:
           docker pull ${IMAGE}:client-${VERSION}
           docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE}:server-${VERSION} > sigs/server-digest.txt
           docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE}:client-${VERSION} > sigs/client-digest.txt
-          # doesn't seem to have a provenance command?
-          # cp server-provenance.intoto.jsonl sigs/
-          # cp client-provenance.intoto.jsonl sigs/
 
       - name: Upload signatures & provenance
         uses: actions/upload-artifact@v4
@@ -249,7 +246,7 @@ jobs:
       - name: Trivy Image Scan (server)
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${IMAGE}:server-${VERSION}
+          image-ref: ghcr.io/${{ github.repository_owner }}/gitstafette:server-${{ needs.prepare.outputs.version }}
           format: 'table'
           exit-code: '0'
           vuln-type: 'os,library'
@@ -257,7 +254,7 @@ jobs:
       - name: Trivy Image Scan (client)
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${IMAGE}:client-${VERSION}
+          image-ref: ghcr.io/${{ github.repository_owner }}/gitstafette:client-${{ needs.prepare.outputs.version }}
           format: 'table'
           exit-code: '0'
           vuln-type: 'os,library'

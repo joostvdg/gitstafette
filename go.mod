@@ -1,6 +1,6 @@
 module github.com/joostvdg/gitstafette
 
-go 1.25
+go 1.24
 
 require github.com/labstack/echo/v4 v4.13.4
 

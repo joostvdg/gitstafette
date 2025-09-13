@@ -21,7 +21,9 @@ func NewInMemoryStore() *inMemoryStore {
 	if !otel_util.IsOTelEnabled() {
 		return i
 	}
-	_, err, mp, _ := otel_util.SetupOTelSDK(context.Background(), "gsf-inmemory-store", "0.0.1")
+	// _, _, mp, _, err := otel_util.SetupOTelSDK(context.Background(), "gsf-inmemory-store", "0.0.1")
+	_, mp, _, err := otel_util.SetupOTelSDK(context.Background(), "gsf-inmemory-store", "0.0.1")
+
 	if err != nil {
 		sublogger.Warn().Err(err).Msg("Encountered an error when setting up OTEL SDK")
 	} else {

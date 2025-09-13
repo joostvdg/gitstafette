@@ -4,8 +4,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"os"
+
 	"github.com/rs/zerolog/log"
-	"io/ioutil"
 )
 
 func NewTLSConfig(caFileLocation string, certificateFileLocation string, certificateKeyFileLocation string, isServer bool) (*tls.Config, error) {
@@ -26,7 +27,7 @@ func NewTLSConfig(caFileLocation string, certificateFileLocation string, certifi
 	}
 
 	if caFileLocation != "" {
-		b, err := ioutil.ReadFile(caFileLocation)
+		b, err := os.ReadFile(caFileLocation)
 		if err != nil {
 			return nil, err
 		}
@@ -35,7 +36,7 @@ func NewTLSConfig(caFileLocation string, certificateFileLocation string, certifi
 		if err != nil {
 			log.Warn().Err(err).Msg("cannot load root CA certs")
 		}
-		ok := ca.AppendCertsFromPEM([]byte(b))
+		ok := ca.AppendCertsFromPEM(b)
 
 		if !ok {
 			return nil, fmt.Errorf(

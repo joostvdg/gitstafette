@@ -5,6 +5,13 @@ NAME := gitstafette
 PROJECT_ID := kearos-gcp
 MAIN_GO :=
 
+SHELL := /bin/bash
+
+.PHONY:
+verify:
+	shopt -s globstar && gofmt -s -w -l **/*.go
+	go vet ./...
+
 .PHONY: init
 init:
 	mkdir -p ${CONFIG_PATH}

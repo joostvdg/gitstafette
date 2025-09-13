@@ -105,7 +105,7 @@ func main() {
 	if otelEnabled {
 		log.Info().Msg("OTEL is enabled")
 		var otelShutdown func(context.Context) error
-		otelShutdown, err, metricProvider, tp := otel_util.SetupOTelSDK(ctx, "gsf-client", "0.0.1")
+		otelShutdown, metricProvider, tp, err := otel_util.SetupOTelSDK(ctx, "gsf-client", "0.0.1")
 		mp = metricProvider
 		tracer = tp.Tracer("gsf-GitstafetteServer")
 		if err != nil {

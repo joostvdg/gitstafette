@@ -22,14 +22,13 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"google.golang.org/grpc/peer"
 )
 
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.
 // If it does not return an error, make sure to call shutdown for proper cleanup.
-func SetupOTelSDK(ctx context.Context, serviceName, serviceVersion string) (shutdown func(context.Context) error, err error, meterProvider *metric.MeterProvider, tracerProvider *trace.TracerProvider) {
+func SetupOTelSDK(ctx context.Context, serviceName, serviceVersion string) (shutdown func(context.Context) error, meterProvider *metric.MeterProvider, tracerProvider *trace.TracerProvider, err error) {
 	var shutdownFuncs []func(context.Context) error
 	otelConfig := NewOTELConfig()
 	if otelConfig.serviceName == "" {
@@ -103,20 +102,11 @@ func newPropagator() propagation.TextMapPropagator {
 	)
 }
 
-func newTraceProvider(res *resource.Resource, config *OTELConfig) (*sdktrace.TracerProvider, error) {
+func newTraceProvider(res *resource.Resource, config *OTELConfig) (*trace.TracerProvider, error) {
 	otelConfig := NewOTELConfig()
+	// TODO: how do we provide the correct context to this?
+	conn, err := grpc.NewClient(otelConfig.GetOTELEndpoint(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 
-	// Set up a trace exporter
-
-	ctx := context.Background()
-	timeoutDurationInSeconds := time.Second * 5
-	ctx, cancel := context.WithTimeout(ctx, timeoutDurationInSeconds)
-	defer cancel()
-	conn, err := grpc.DialContext(ctx, otelConfig.GetOTELEndpoint(),
-		// Note the use of insecure transport here. TLS is recommended in production.
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
 	if err != nil {
 		if otelConfig.enabled {
 			return nil, fmt.Errorf("failed to create gRPC connection to collector: %w", err)
@@ -125,7 +115,7 @@ func newTraceProvider(res *resource.Resource, config *OTELConfig) (*sdktrace.Tra
 		}
 	}
 
-	traceExporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithGRPCConn(conn))
+	traceExporter, err := otlptracegrpc.New(context.Background(), otlptracegrpc.WithGRPCConn(conn))
 	if err != nil {
 		if otelConfig.enabled {
 			return nil, fmt.Errorf("failed to create trace exporter: %w", err)
@@ -136,15 +126,15 @@ func newTraceProvider(res *resource.Resource, config *OTELConfig) (*sdktrace.Tra
 
 	// Register the trace exporter with a TracerProvider, using a batch
 	// span processor to aggregate spans before export.
-	bsp := sdktrace.NewBatchSpanProcessor(traceExporter)
+	bsp := trace.NewBatchSpanProcessor(traceExporter)
 
 	sublogger := log.With().Str("component", "otel_util").Logger()
 	sublogger.Info().Msgf("OTEL Config: %v", otelConfig)
-	sampler := sdktrace.ParentBased(sdktrace.TraceIDRatioBased(otelConfig.samplingRate))
-	tracerProvider := sdktrace.NewTracerProvider(
-		sdktrace.WithSampler(sampler),
-		sdktrace.WithResource(res),
-		sdktrace.WithSpanProcessor(bsp),
+	sampler := trace.ParentBased(trace.TraceIDRatioBased(otelConfig.samplingRate))
+	tracerProvider := trace.NewTracerProvider(
+		trace.WithSampler(sampler),
+		trace.WithResource(res),
+		trace.WithSpanProcessor(bsp),
 	)
 	return tracerProvider, nil
 }

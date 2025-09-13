@@ -2,14 +2,17 @@ package v1
 
 import (
 	"fmt"
+	"io"
+
+	"net/http"
+	"time"
+
 	"github.com/getsentry/sentry-go"
 	sentryecho "github.com/getsentry/sentry-go/echo"
 	"github.com/joostvdg/gitstafette/internal/cache"
 	gcontext "github.com/joostvdg/gitstafette/internal/context"
 	"github.com/labstack/echo/v4"
-	"io/ioutil"
-	"net/http"
-	"time"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -22,8 +25,13 @@ const (
 
 func HandleGitHubPost(ctx echo.Context) error {
 	body := ctx.Request().Body
-	defer body.Close()
-	messagePayload, err := ioutil.ReadAll(body)
+	defer func(body io.ReadCloser) {
+		err := body.Close()
+		if err != nil {
+			log.Warn().Err(err).Msg("Could not close body")
+		}
+	}(body)
+	messagePayload, err := io.ReadAll(body)
 	if err != nil {
 		sublogger.Warn().Err(err).Msg("Ran into an error parsing content (Assumed GitHub Post)")
 	}

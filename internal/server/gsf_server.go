@@ -75,15 +75,14 @@ func (s GitstafetteServer) WebhookEventStatuses(request *api.WebhookEventStatuse
 	lastEvent := len(events) - 1
 	currentEvent := 0
 
+timed:
 	for time.Now().Before(finish) {
-		closed := false
 		select {
 		case <-time.After(waitInterval):
 			eventInfo := fmt.Sprintf("Sent event %v of %v", currentEvent, lastEvent)
 			_, span := tracer.Start(spanCtx, eventInfo, trace.WithSpanKind(trace.SpanKindServer))
 			if currentEvent > lastEvent {
-				closed = true
-				break
+				break timed
 			}
 			eventStatus := events[currentEvent]
 			currentEvent++
@@ -93,19 +92,13 @@ func (s GitstafetteServer) WebhookEventStatuses(request *api.WebhookEventStatuse
 				return err
 			}
 			span.End()
-			break
+			break timed
 		case <-srv.Context().Done(): // Activated when ctx.Done() closes
 			log.Printf("Closing WebhookEventStatuses (client context %s closed)", request.ClientId)
-			closed = true
-			break
+			break timed
 		case <-ctx.Done(): // Activated when ctx.Done() closes
 			log.Info().Msg("Closing WebhookEventStatuses (main context closed)")
-			closed = true
-			break
-		}
-		if closed {
-			log.Info().Msg("Context is already closed")
-			break
+			break timed
 		}
 	}
 	log.Printf("Reached %v, so closed context %s", finish, request.ClientId)
@@ -166,8 +159,8 @@ func (s GitstafetteServer) FetchWebhookEvents(request *api.WebhookEventsRequest,
 			Logger()
 	}
 
+timed:
 	for time.Now().Before(finish) {
-		closed := false
 		select {
 		case <-time.After(s.ResponseInterval):
 			var childSpan trace.Span
@@ -207,16 +200,10 @@ func (s GitstafetteServer) FetchWebhookEvents(request *api.WebhookEventsRequest,
 
 		case <-srv.Context().Done(): // Activated when ctx.Done() closes
 			sublogger.Info().Msgf("Closing FetchWebhookEvents (client context %s closed)", request.ClientId)
-			closed = true
-			break
+			break timed
 		case <-ctx.Done(): // Activated when ctx.Done() closes
 			sublogger.Info().Msg("Closing FetchWebhookEvents (main context closed)")
-			closed = true
-			break
-		}
-		if closed {
-			sublogger.Info().Msg("Context is already closed")
-			break
+			break timed
 		}
 	}
 	sublogger.Info().Msgf("Reached %v, so closed context %s", finish, request.ClientId)

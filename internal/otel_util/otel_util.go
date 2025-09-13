@@ -91,6 +91,7 @@ func (o *OTELConfig) GetOTELEndpoint() string {
 	return o.hostName + ":" + o.port
 }
 
+//nolint:staticcheck
 func StartServerSpanFromClientContext(ctx context.Context, tracer trace.Tracer, serviceNames string, spanKind trace.SpanKind) (trace.SpanContext, context.Context, trace.Span) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
@@ -109,6 +110,7 @@ func StartServerSpanFromClientContext(ctx context.Context, tracer trace.Tracer, 
 	return traceContext, spanContext, span
 }
 
+//nolint:staticcheck
 func StartClientSpan(ctx context.Context, tracer trace.Tracer, serviceName string, connectionTarget string) (context.Context, trace.Span) {
 	name, attr, _ := TelemetryAttributes(serviceName, connectionTarget)
 	startOpts := []trace.SpanStartOption{

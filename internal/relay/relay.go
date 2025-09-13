@@ -53,8 +53,7 @@ func InitiateRelay(serviceContext *gcontext.ServiceContext, repositoryId string)
 
 // TODO API should have a function To/From internal/external rep
 func eventHeadersToHTTPHeaders(eventHeaders []v1.WebhookEventHeader) http.Header {
-	var headers http.Header
-	headers = make(map[string][]string)
+	var headers http.Header = make(map[string][]string)
 
 	for _, header := range eventHeaders {
 		key := header.Key
@@ -94,7 +93,10 @@ func RelayCachedEvents(serviceContext *gcontext.ServiceContext, repositoryId str
 	relay := serviceContext.Relay
 	clock := time.NewTicker(10 * time.Second)
 
-	_, _, meterProvider, _ := otel_util.SetupOTelSDK(context.Background(), "gsf-relay", "0.0.1")
+	_, meterProvider, _, err := otel_util.SetupOTelSDK(context.Background(), "gsf-inmemory-store", "0.0.1")
+	if err != nil {
+		sublogger.Warn().Err(err).Msg("Encountered an error when creating histogram")
+	}
 	meter := meterProvider.Meter("gsf-relay")
 	// TODO: make this a histogram per repository
 	histogram, err := meter.Int64Histogram("CachedEvents", otelapi.WithDescription("a very nice histogram"))
@@ -143,7 +145,7 @@ func GRPCRelay(internalEvent *v1.WebhookEventInternal, relay *v1.RelayConfig, re
 	sublogger.Info().
 		Str("server", server).
 		Msg("[relay] GRPCRelay to config")
-	conn, err := grpc.Dial(server, opts...)
+	conn, err := grpc.NewClient(server, opts...)
 
 	if err != nil {
 		sublogger.Fatal().Err(err).Str("server", server).Msg("cannot connect to the config")
@@ -196,14 +198,23 @@ func RelayHealthCheck(serviceContext *gcontext.ServiceContext) {
 			status.TimeOfLastCheck = time.Now()
 			healthy := false
 			var err error
-			if relay.Protocol == "grpc" {
-				healthy, err = doGrpcHealthcheck(serviceContext)
-			} else if relay.Protocol == "http" || relay.Protocol == "https" {
-				healthy, err = doHttpHealthcheck(relay.HealthEndpoint, repoIds[0])
+			switch relay.Protocol {
+			case "grpc":
+				healthStatus, err2 := doGrpcHealthcheck(serviceContext)
+				if err2 != nil {
+					log.Printf("[relay] Encountered an error doing healthcheck on relay: %v\n", err2)
+				}
+				healthy = healthStatus
+			case "http", "https":
+				healthStatus, err3 := doHttpHealthcheck(relay.HealthEndpoint, repoIds[0])
+				if err3 != nil {
+					log.Printf("[relay] Encountered an error doing healthcheck on relay: %v\n", err3)
+				}
+				healthy = healthStatus
 				if err != nil {
 					log.Printf("[relay] Encountered an error doing healthcheck on relay: %v\n", err)
 				}
-			} else {
+			default:
 				log.Printf("[relay] Invalid relay protocol %s\n", relay.Protocol)
 			}
 
@@ -238,7 +249,7 @@ func doGrpcHealthcheck(serviceContext *gcontext.ServiceContext) (bool, error) {
 
 	// https://www.googlecloudcommunity.com/gc/Serverless/Unable-to-connect-to-Cloud-Run-gRPC-server/m-p/422280/highlight/true#M345
 	server := fmt.Sprintf("%s:%s", relayConfig.Host, relayConfig.Port)
-	conn, err := grpc.Dial(server, opts...)
+	conn, err := grpc.NewClient(server, opts...)
 	if err != nil {
 		sublogger.Fatal().Err(err).Str("server", server).Msg("cannot connect to the config")
 	}
@@ -301,9 +312,11 @@ func CleanupRelayedEvents(serviceContext *gcontext.ServiceContext) {
 
 	var cleanupRelayedEventsCounter otelapi.Int64Counter
 	if otel_util.IsOTelEnabled() {
-		_, _, meterProvider, _ := otel_util.SetupOTelSDK(context.Background(), "gsf-relay", "0.0.1")
+		_, meterProvider, _, err := otel_util.SetupOTelSDK(context.Background(), "gsf-inmemory-store", "0.0.1")
+		if err != nil {
+			sublogger.Warn().Err(err).Msg("Encountered an error when creating histogram")
+		}
 		meter := meterProvider.Meter("gsf-inmemory-store")
-		err := error(nil)
 		cleanupRelayedEventsCounter, err = meter.Int64Counter("cleanup_relayed_events")
 		if err != nil {
 			sublogger.Warn().Err(err).Msg("Encountered an error when creating histogram")

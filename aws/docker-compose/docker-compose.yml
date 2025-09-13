@@ -85,7 +85,7 @@ services:
       - 8082:8082
 
   gitstafette-server:
-    image: ghcr.io/joostvdg/gitstafette/server:0.3.0 #ghcr.io/joostvdg/gitstafette/server:0.1.0-3dfea6d
+    image: ghcr.io/joostvdg/gitstafette:server-0.5.4
     command: [
       "--repositories=537845873,478599060,758715872,763032882,502306743",
       "--grpcPort=50051",

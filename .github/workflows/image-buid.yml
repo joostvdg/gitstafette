@@ -13,11 +13,10 @@ permissions:
   actions: read
 
 env:
-  GO_VERSION: '1.22.x'
-  VERSION_BASE: '0.4'              # Update Major.Minor here when needed
+  GO_VERSION: '1.24.x'
+  VERSION_BASE: '0.5'              # Update Major.Minor here when needed
   MODULE: './...'
-  IMAGE_SERVER: ghcr.io/${{ github.repository_owner }}/gitstafette/server
-  IMAGE_CLIENT: ghcr.io/${{ github.repository_owner }}/gitstafette/client
+  IMAGE: ghcr.io/${{ github.repository_owner }}/gitstafette
   REGISTRY: ghcr.io
 
 concurrency:
@@ -197,8 +196,8 @@ jobs:
       - name: Image SBOMs
         run: |
           mkdir -p image-sboms
-          syft "${IMAGE_SERVER}:${VERSION}" -o cyclonedx-json > image-sboms/server-image-sbom.cdx.json
-          syft "${IMAGE_CLIENT}:${VERSION}" -o cyclonedx-json > image-sboms/client-image-sbom.cdx.json
+          syft "${IMAGE}:server-${VERSION}" -o cyclonedx-json > image-sboms/server-image-sbom.cdx.json
+          syft "${IMAGE}:client-${VERSION}" -o cyclonedx-json > image-sboms/client-image-sbom.cdx.json
 
       - name: Upload image SBOMs
         uses: actions/upload-artifact@v4
@@ -215,30 +214,30 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: 1
         run: |
-          cosign sign --yes ${IMAGE_SERVER}:${VERSION}
-          cosign sign --yes ${IMAGE_CLIENT}:${VERSION}
+          cosign sign --yes ${IMAGE}:server-${VERSION}
+          cosign sign --yes ${IMAGE}:client-${VERSION}
 
       - name: Generate provenance (SLSA-style) / attestation
         env:
           COSIGN_EXPERIMENTAL: 1
         run: |
-          cosign provenance --predicate-type slsaprovenance ${IMAGE_SERVER}:${VERSION} > server-provenance.intoto.jsonl
-          cosign provenance --predicate-type slsaprovenance ${IMAGE_CLIENT}:${VERSION} > client-provenance.intoto.jsonl
-          cosign attest --yes --predicate image-sboms/server-image-sbom.cdx.json --type cyclonedx ${IMAGE_SERVER}:${VERSION}
-          cosign attest --yes --predicate image-sboms/client-image-sbom.cdx.json --type cyclonedx ${IMAGE_CLIENT}:${VERSION}
-          cosign verify-attestation ${IMAGE_SERVER}:${VERSION} --type cyclonedx
-          cosign verify-attestation ${IMAGE_CLIENT}:${VERSION} --type cyclonedx
+          cosign provenance --predicate-type slsaprovenance ${IMAGE}:server-${VERSION} > server-provenance.intoto.jsonl
+          cosign provenance --predicate-type slsaprovenance ${IMAGE}:client-${VERSION} > client-provenance.intoto.jsonl
+          cosign attest --yes --predicate image-sboms/server-image-sbom.cdx.json --type cyclonedx ${IMAGE}:server-${VERSION}
+          cosign attest --yes --predicate image-sboms/client-image-sbom.cdx.json --type cyclonedx ${IMAGE}:client-${VERSION}
+          cosign verify-attestation ${IMAGE}:server-${VERSION} --type cyclonedx
+          cosign verify-attestation ${IMAGE}:client-${VERSION} --type cyclonedx
 
       - name: Collect signature & attestation info
         run: |
           mkdir -p sigs
-          echo "${IMAGE_SERVER}:${VERSION}" > sigs/images.txt
-          echo "${IMAGE_CLIENT}:${VERSION}" >> sigs/images.txt
+          echo "${IMAGE}:server-${VERSION}" > sigs/images.txt
+          echo "${IMAGE}:client-${VERSION}" >> sigs/images.txt
           # Rekor transparency log entries can be resolved later; capture digests:
-          docker pull ${IMAGE_SERVER}:${VERSION}
-          docker pull ${IMAGE_CLIENT}:${VERSION}
-          docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE_SERVER}:${VERSION} > sigs/server-digest.txt
-            docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE_CLIENT}:${VERSION} > sigs/client-digest.txt
+          docker pull ${IMAGE}:server-${VERSION}
+          docker pull ${IMAGE}:client-${VERSION}
+          docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE}:server-${VERSION} > sigs/server-digest.txt
+          docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE}:client-${VERSION} > sigs/client-digest.txt
           cp server-provenance.intoto.jsonl sigs/
           cp client-provenance.intoto.jsonl sigs/
 
@@ -251,7 +250,7 @@ jobs:
       - name: Trivy Image Scan (server)
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${IMAGE_SERVER}:${VERSION}
+          image-ref: ${IMAGE}:server-${VERSION}
           format: 'table'
           exit-code: '0'
           vuln-type: 'os,library'
@@ -259,7 +258,7 @@ jobs:
       - name: Trivy Image Scan (client)
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${IMAGE_CLIENT}:${VERSION}
+          image-ref: ${IMAGE}:client-${VERSION}
           format: 'table'
           exit-code: '0'
           vuln-type: 'os,library'
@@ -288,8 +287,8 @@ jobs:
             echo "## gitstafette v${ver}"
             echo ""
             echo "Images:"
-            echo "- Server: ${IMAGE_SERVER}:${ver}"
-            echo "- Client: ${IMAGE_CLIENT}:${ver}"
+            echo "- Server: ${IMAGE}:server-${ver}"
+            echo "- Client: ${IMAGE}:client-${ver}"
             echo ""
             echo "Artifacts included:"
             echo "- Source SBOMs"

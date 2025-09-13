@@ -99,10 +99,10 @@ func StartServerSpanFromClientContext(ctx context.Context, tracer trace.Tracer, 
 	_, traceContext := otelgrpc.Extract(ctx, &md)
 	otelgrpc.Inject(ctx, &md)
 	name, attr, _ := TelemetryAttributes(serviceNames, PeerFromCtx(ctx))
-	startOpts := append([]trace.SpanStartOption{
+	startOpts := []trace.SpanStartOption{
 		trace.WithSpanKind(spanKind),
 		trace.WithAttributes(attr...),
-	})
+	}
 
 	spanParentContext := trace.ContextWithRemoteSpanContext(ctx, traceContext)
 	spanContext, span := tracer.Start(spanParentContext, name, startOpts...)
@@ -111,10 +111,10 @@ func StartServerSpanFromClientContext(ctx context.Context, tracer trace.Tracer, 
 
 func StartClientSpan(ctx context.Context, tracer trace.Tracer, serviceName string, connectionTarget string) (context.Context, trace.Span) {
 	name, attr, _ := TelemetryAttributes(serviceName, connectionTarget)
-	startOpts := append([]trace.SpanStartOption{
+	startOpts := []trace.SpanStartOption{
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(attr...),
-	})
+	}
 
 	spanParentContext := trace.ContextWithRemoteSpanContext(ctx, trace.SpanContextFromContext(ctx))
 	spanContext, span := tracer.Start(spanParentContext, name, startOpts...)

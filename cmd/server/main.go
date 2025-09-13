@@ -319,7 +319,7 @@ func initializeGRPCServer(grpcPort string, tlsConfig *tls.Config, healthServer *
 			log.Info().Msg("GRPC HealthCheck GitstafetteServer is empty, running service with normal GRPC GitstafetteServer")
 			grpc_health_v1.RegisterHealthServer(s, &grpc_internal.HealthCheckService{})
 		} else {
-			log.Printf("Running GRPC HealthCheck GitstafetteServer standalone\n", s.GetServiceInfo())
+			log.Printf("Running GRPC HealthCheck GitstafetteServer standalone: %v\n", s.GetServiceInfo())
 		}
 
 		if err := s.Serve(grpcListener); err != nil {

@@ -289,7 +289,7 @@ func handleWebhookEventStream(serverConfig *api.GRPCServerConfig, clientConfig *
 
 				for _, event := range response.WebhookEvents {
 
-					sublogger.Printf("[handleWebhookEventStream] InternalEvent: %d, body size: %d, number of headers:  %d\n", event.EventId, len(event.Body), len(event.Headers))
+					sublogger.Printf("[handleWebhookEventStream] InternalEvent: %s, body size: %d, number of headers:  %d\n", event.EventId, len(event.Body), len(event.Headers))
 					eventIsValid := v1.ValidateEvent(clientConfig.WebhookHMAC, event)
 					messageAddition := ""
 					if clientConfig.WebhookHMAC != "" {

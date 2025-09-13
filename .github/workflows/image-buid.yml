@@ -221,8 +221,9 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: 1
         run: |
-          cosign provenance --predicate-type slsaprovenance ${IMAGE}:server-${VERSION} > server-provenance.intoto.jsonl
-          cosign provenance --predicate-type slsaprovenance ${IMAGE}:client-${VERSION} > client-provenance.intoto.jsonl
+          # doesn't seem to have a provenance command?
+          # cosign provenance --predicate-type slsaprovenance ${IMAGE}:server-${VERSION} > server-provenance.intoto.jsonl
+          # cosign provenance --predicate-type slsaprovenance ${IMAGE}:client-${VERSION} > client-provenance.intoto.jsonl
           cosign attest --yes --predicate image-sboms/server-image-sbom.cdx.json --type cyclonedx ${IMAGE}:server-${VERSION}
           cosign attest --yes --predicate image-sboms/client-image-sbom.cdx.json --type cyclonedx ${IMAGE}:client-${VERSION}
           cosign verify-attestation ${IMAGE}:server-${VERSION} --type cyclonedx
@@ -238,8 +239,9 @@ jobs:
           docker pull ${IMAGE}:client-${VERSION}
           docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE}:server-${VERSION} > sigs/server-digest.txt
           docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE}:client-${VERSION} > sigs/client-digest.txt
-          cp server-provenance.intoto.jsonl sigs/
-          cp client-provenance.intoto.jsonl sigs/
+          # doesn't seem to have a provenance command?
+          # cp server-provenance.intoto.jsonl sigs/
+          # cp client-provenance.intoto.jsonl sigs/
 
       - name: Upload signatures & provenance
         uses: actions/upload-artifact@v4
@@ -293,7 +295,7 @@ jobs:
             echo "Artifacts included:"
             echo "- Source SBOMs"
             echo "- Image SBOMs"
-            echo "- Cosign provenance & digests"
+            echo "- Cosign digests"
             echo "- Signatures (verifiable via transparency log)"
           } > RELEASE_NOTES.md
           cat RELEASE_NOTES.md
@@ -307,7 +309,7 @@ jobs:
           files: |
             dist/source-sboms/**
             dist/image-sboms/**
-            dist/signatures-provenance/**
+
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

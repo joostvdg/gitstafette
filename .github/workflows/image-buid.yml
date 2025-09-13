@@ -223,8 +223,8 @@ jobs:
         run: |
           cosign attest --yes --predicate image-sboms/server-image-sbom.cdx.json --type cyclonedx ${IMAGE}:server-${VERSION}
           cosign attest --yes --predicate image-sboms/client-image-sbom.cdx.json --type cyclonedx ${IMAGE}:client-${VERSION}
-          cosign verify-attestation ${IMAGE}:server-${VERSION} --type cyclonedx --certificate-identity-regexp ".*"
-          cosign verify-attestation ${IMAGE}:client-${VERSION} --type cyclonedx --certificate-identity-regexp ".*"
+          cosign verify-attestation ${IMAGE}:server-${VERSION} --type cyclonedx --certificate-oidc-issuer-regexp="https://token.actions.githubusercontent.com" --certificate-identity-regexp="https://github.com/joostvdg/gitstafette/.github/workflows/image-buid.yml@refs/heads/main"
+          cosign verify-attestation ${IMAGE}:client-${VERSION} --type cyclonedx --certificate-oidc-issuer-regexp="https://token.actions.githubusercontent.com" --certificate-identity-regexp="https://github.com/joostvdg/gitstafette/.github/workflows/image-buid.yml@refs/heads/main"
 
       - name: Collect signature & attestation info
         run: |

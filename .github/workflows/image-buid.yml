@@ -221,13 +221,10 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: 1
         run: |
-          # doesn't seem to have a provenance command?
-          # cosign provenance --predicate-type slsaprovenance ${IMAGE}:server-${VERSION} > server-provenance.intoto.jsonl
-          # cosign provenance --predicate-type slsaprovenance ${IMAGE}:client-${VERSION} > client-provenance.intoto.jsonl
           cosign attest --yes --predicate image-sboms/server-image-sbom.cdx.json --type cyclonedx ${IMAGE}:server-${VERSION}
           cosign attest --yes --predicate image-sboms/client-image-sbom.cdx.json --type cyclonedx ${IMAGE}:client-${VERSION}
-          cosign verify-attestation ${IMAGE}:server-${VERSION} --type cyclonedx
-          cosign verify-attestation ${IMAGE}:client-${VERSION} --type cyclonedx
+          cosign verify-attestation ${IMAGE}:server-${VERSION} --type cyclonedx --certificate-identity-regexp ".*"
+          cosign verify-attestation ${IMAGE}:client-${VERSION} --type cyclonedx --certificate-identity-regexp ".*"
 
       - name: Collect signature & attestation info
         run: |

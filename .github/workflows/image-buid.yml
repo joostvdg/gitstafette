@@ -7,6 +7,7 @@ on:
       - 'aws/**'
       - '.github/workflows/aws-vm-packer-build.yml'
       - '.github/workflows/structure-test.yml'
+      - README.md
   workflow_dispatch: {}
 
 permissions:

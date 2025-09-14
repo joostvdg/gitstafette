@@ -26,6 +26,7 @@ require (
 require (
 	cloud.google.com/go/compute/metadata v0.7.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
+	github.com/getsentry/sentry-go/echo v0.35.2 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -49,7 +50,7 @@ require (
 )
 
 require (
-	github.com/getsentry/sentry-go v0.15.0
+	github.com/getsentry/sentry-go v0.35.2
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/onsi/gomega v1.24.0 // indirect
 )
